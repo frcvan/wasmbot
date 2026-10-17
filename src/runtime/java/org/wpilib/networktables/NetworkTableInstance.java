@@ -4,8 +4,8 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Default, in-process NT instance for host-backed typed double publication.
- * Does not construct the desktop instance's native listener events or threads.
+ * Default, in-process NT instance for host-backed typed double publication. Does not construct the
+ * desktop instance's native listener events or threads.
  */
 public final class NetworkTableInstance implements AutoCloseable {
   public static final int DEFAULT_PORT = 5810;
@@ -28,8 +28,8 @@ public final class NetworkTableInstance implements AutoCloseable {
   }
 
   public Topic getTopic(String name) {
-    return topics.computeIfAbsent(name,
-        key -> new Topic(this, NetworkTablesJNI.getTopic(getHandle(), key)));
+    return topics.computeIfAbsent(
+        name, key -> new Topic(this, NetworkTablesJNI.getTopic(getHandle(), key)));
   }
 
   public DoubleTopic getDoubleTopic(String name) {

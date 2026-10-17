@@ -12,8 +12,8 @@ import org.graalvm.webimage.api.JSValue;
  *
  * <ul>
  *   <li>{@code nowNanos(): number} monotonic time in nanoseconds
- *   <li>{@code driverStation(): {enabled, alliance, leftX, leftY, rightX}} alliance is {@code "red"} or
- *       {@code "blue"}
+ *   <li>{@code driverStation(): {enabled, alliance, leftX, leftY, rightX}} alliance is {@code
+ *       "red"} or {@code "blue"}
  *   <li>{@code ntGet(path): any} current NetworkTables value, or {@code undefined}
  *   <li>{@code ntPut(path, value)} publish a telemetry value
  * </ul>

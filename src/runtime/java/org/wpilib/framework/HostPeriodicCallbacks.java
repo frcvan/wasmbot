@@ -33,7 +33,8 @@ final class HostPeriodicCallbacks {
 
   static long periodNanos(double seconds) {
     if (!Double.isFinite(seconds) || seconds < 1e-9 || seconds >= Long.MAX_VALUE * 1e-9) {
-      throw new IllegalArgumentException("Callback period must be a positive finite nanosecond duration");
+      throw new IllegalArgumentException(
+          "Callback period must be a positive finite nanosecond duration");
     }
     return (long) (seconds * 1e9);
   }

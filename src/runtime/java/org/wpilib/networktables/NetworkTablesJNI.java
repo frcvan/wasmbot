@@ -8,9 +8,9 @@ import org.graalvm.webimage.api.JSString;
 import org.teamvan.wasmbot.JsBridge;
 
 /**
- * Host-backed subset of NT JNI for default-instance typed double publishers.
- * The ordinary SDK DoubleTopic and DoublePublisher remain in use.
- * Server/client networking, listeners, queues, and other value types are not implemented here.
+ * Host-backed subset of NT JNI for default-instance typed double publishers. The ordinary SDK
+ * DoubleTopic and DoublePublisher remain in use. Server/client networking, listeners, queues, and
+ * other value types are not implemented here.
  */
 public final class NetworkTablesJNI {
   private static final Map<String, Integer> topicHandles = new HashMap<>();
@@ -27,16 +27,20 @@ public final class NetworkTablesJNI {
   }
 
   public static int getTopic(int inst, String name) {
-    if (inst != 1) throw new UnsupportedOperationException("Only the default NT instance is supported");
-    return topicHandles.computeIfAbsent(name, key -> {
-      int handle = nextHandle++;
-      topics.put(handle, JSString.of(key));
-      return handle;
-    });
+    if (inst != 1)
+      throw new UnsupportedOperationException("Only the default NT instance is supported");
+    return topicHandles.computeIfAbsent(
+        name,
+        key -> {
+          int handle = nextHandle++;
+          topics.put(handle, JSString.of(key));
+          return handle;
+        });
   }
 
   public static int publish(int topic, int type, String typeStr, PubSubOption... options) {
-    if (options.length != 0) throw new UnsupportedOperationException("NT publisher options are not supported");
+    if (options.length != 0)
+      throw new UnsupportedOperationException("NT publisher options are not supported");
     if (type != NetworkTableType.DOUBLE.getValue() || !"double".equals(typeStr)) {
       throw new UnsupportedOperationException("Only typed double NT publishers are supported");
     }
@@ -75,7 +79,8 @@ public final class NetworkTablesJNI {
 
   @JS.Coerce
   @JS("return globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
-  private static native boolean putDouble(JSObject owner, JSString path, double timestamp, double value);
+  private static native boolean putDouble(
+      JSObject owner, JSString path, double timestamp, double value);
 
   @JS.Coerce
   @JS("return globalThis.wasmbot.ntGet(path) !== undefined;")

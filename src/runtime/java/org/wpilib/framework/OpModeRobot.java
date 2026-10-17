@@ -109,7 +109,8 @@ public abstract class OpModeRobot extends RobotBase {
   }
 
   private static UnsupportedOperationException unsupportedOpModes() {
-    return new UnsupportedOperationException("The browser driver station does not support opmode selection");
+    return new UnsupportedOperationException(
+        "The browser driver station does not support opmode selection");
   }
 
   public void addOpMode(
@@ -181,6 +182,7 @@ public abstract class OpModeRobot extends RobotBase {
   }
 
   public void printWatchdogEpochs() {
-    throw new UnsupportedOperationException("The host-driven framework does not run a native watchdog");
+    throw new UnsupportedOperationException(
+        "The host-driven framework does not run a native watchdog");
   }
 }

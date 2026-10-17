@@ -8,8 +8,8 @@ import org.wpilib.units.measure.Time;
 /**
  * Iterative robot framework scheduled by the host's monotonic clock instead of a HAL notifier.
  *
- * <p>Host ticks drain due callbacks without waiting. Periods shorter than the host tick interval are
- * quantized to that interval; missed expirations are skipped rather than replayed. The default
+ * <p>Host ticks drain due callbacks without waiting. Periods shorter than the host tick interval
+ * are quantized to that interval; missed expirations are skipped rather than replayed. The default
  * 20 ms robot period therefore runs once per normal 20 ms host tick, including while disabled.
  */
 public class TimedRobot extends IterativeRobotBase {

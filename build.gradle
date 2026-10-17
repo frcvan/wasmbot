@@ -5,6 +5,7 @@ import com.vanniktech.maven.publish.SourcesJar
 plugins {
     id 'groovy'
     id 'java-gradle-plugin'
+    id "com.diffplug.spotless" version "8.6.0"
     id 'com.vanniktech.maven.publish' version '0.37.0'
 }
 
@@ -99,5 +100,47 @@ def bundleWasmLibrary = tasks.register('bundleWasmLibrary', Zip) {
 tasks.named('processResources') {
     from(bundleWasmLibrary.flatMap { it.archiveFile }) {
         into 'org/teamvan/wasmbot/plugin'
+    }
+}
+
+// Spotless formatting
+project.compileJava.dependsOn(spotlessApply)
+spotless {
+    java {
+        target fileTree(".") {
+            include "**/*.java"
+            exclude "**/build/**", "**/build-*/**"
+        }
+        toggleOffOn()
+        googleJavaFormat()
+        removeUnusedImports()
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+    groovyGradle {
+        target fileTree(".") {
+            include "**/*.gradle"
+            exclude "**/build/**", "**/build-*/**"
+        }
+        greclipse()
+        leadingTabsToSpaces(4)
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+    json {
+        target fileTree(".") {
+            include "**/*.json"
+            exclude "**/build/**", "**/build-*/**", ".wpilib/**"
+        }
+        gson().indentWithSpaces(2)
+    }
+    format "misc", {
+        target fileTree(".") {
+            include "**/*.md", "**/.gitignore"
+            exclude "**/build/**", "**/build-*/**"
+        }
+        trimTrailingWhitespace()
+        leadingTabsToSpaces(2)
+        endWithNewline()
     }
 }

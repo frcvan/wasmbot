@@ -96,7 +96,9 @@ public abstract class RobotBase implements AutoCloseable {
     return RobotState.getOpMode();
   }
 
-  /** Exports the host startup and asynchronous tick functions without constructing the robot yet. */
+  /**
+   * Exports the host startup and asynchronous tick functions without constructing the robot yet.
+   */
   public static <T extends RobotBase> void startRobot(Supplier<T> robotConstructor) {
     WasmApplication.launch(robotConstructor);
   }

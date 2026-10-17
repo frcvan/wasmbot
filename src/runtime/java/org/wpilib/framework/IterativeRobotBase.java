@@ -117,6 +117,7 @@ public abstract class IterativeRobotBase extends RobotBase {
   }
 
   public void printWatchdogEpochs() {
-    throw new UnsupportedOperationException("The host-driven framework does not run a native watchdog");
+    throw new UnsupportedOperationException(
+        "The host-driven framework does not run a native watchdog");
   }
 }

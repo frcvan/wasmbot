@@ -15,10 +15,10 @@ import org.wpilib.util.Pair;
 /**
  * HAL-free HID backed by the browser Driver Station snapshot.
  *
- * <p>Port zero provides raw axes 0 (left X), 1 (left Y), and 2 (right X), matching the
- * WPILib gamepad axis mapping. The host does not publish other axes, buttons, POVs, or touchpads:
- * those inputs remain neutral and are absent from the availability masks. Ports one through five
- * are disconnected. No native HID outputs are available.
+ * <p>Port zero provides raw axes 0 (left X), 1 (left Y), and 2 (right X), matching the WPILib
+ * gamepad axis mapping. The host does not publish other axes, buttons, POVs, or touchpads: those
+ * inputs remain neutral and are absent from the availability masks. Ports one through five are
+ * disconnected. No native HID outputs are available.
  */
 public final class GenericHID implements HIDDevice {
   /** A rumble output on a controller. */
@@ -101,17 +101,23 @@ public final class GenericHID implements HIDDevice {
     return this;
   }
 
-  /** @return false; the snapshot provides no buttons */
+  /**
+   * @return false; the snapshot provides no buttons
+   */
   public boolean getRawButton(int button) {
     return false;
   }
 
-  /** @return false; an unavailable button has no press edges */
+  /**
+   * @return false; an unavailable button has no press edges
+   */
   public boolean getRawButtonPressed(int button) {
     return false;
   }
 
-  /** @return false; an unavailable button has no release edges */
+  /**
+   * @return false; an unavailable button has no release edges
+   */
   public boolean getRawButtonReleased(int button) {
     return false;
   }
@@ -123,7 +129,9 @@ public final class GenericHID implements HIDDevice {
     }
   }
 
-  /** @return the latest supported axis value, or zero for an unavailable axis or port */
+  /**
+   * @return the latest supported axis value, or zero for an unavailable axis or port
+   */
   public double getRawAxis(int axis) {
     if (m_port != 0) {
       return 0.0;
@@ -136,7 +144,9 @@ public final class GenericHID implements HIDDevice {
     };
   }
 
-  /** @return center; the snapshot provides no POVs */
+  /**
+   * @return center; the snapshot provides no POVs
+   */
   public POVDirection getPOV(int pov) {
     return POVDirection.CENTER;
   }
@@ -211,12 +221,16 @@ public final class GenericHID implements HIDDevice {
     }
   }
 
-  /** @return the same contiguous axis upper bound used by WPILib */
+  /**
+   * @return the same contiguous axis upper bound used by WPILib
+   */
   public int getAxesMaximumIndex() {
     return m_port == 0 ? 3 : 0;
   }
 
-  /** @return the bitmask of available axes, not an axis count */
+  /**
+   * @return the bitmask of available axes, not an axis count
+   */
   public int getAxesAvailable() {
     return m_port == 0 ? 0b111 : 0;
   }
@@ -237,17 +251,23 @@ public final class GenericHID implements HIDDevice {
     return 0L;
   }
 
-  /** @return whether port zero has received a browser Driver Station snapshot */
+  /**
+   * @return whether port zero has received a browser Driver Station snapshot
+   */
   public boolean isConnected() {
     return m_port == 0 && WasmRuntime.isDSAttached();
   }
 
-  /** @return unknown; a keyboard-backed virtual HID is not a physical controller */
+  /**
+   * @return unknown; a keyboard-backed virtual HID is not a physical controller
+   */
   public HIDType getGamepadType() {
     return HIDType.UNKNOWN;
   }
 
-  /** @return an empty set; no controller outputs are supported */
+  /**
+   * @return an empty set; no controller outputs are supported
+   */
   public EnumSet<SupportedOutput> getSupportedOutputs() {
     return EnumSet.noneOf(SupportedOutput.class);
   }
@@ -260,17 +280,23 @@ public final class GenericHID implements HIDDevice {
     return m_port;
   }
 
-  /** @throws UnsupportedOperationException because the browser bridge has no LED output */
+  /**
+   * @throws UnsupportedOperationException because the browser bridge has no LED output
+   */
   public void setLeds(int r, int g, int b) {
     throw new UnsupportedOperationException("Controller LED output is unavailable in wasmbot");
   }
 
-  /** @throws UnsupportedOperationException because the browser bridge has no rumble output */
+  /**
+   * @throws UnsupportedOperationException because the browser bridge has no rumble output
+   */
   public void setRumble(RumbleType type, double value) {
     throw new UnsupportedOperationException("Controller rumble output is unavailable in wasmbot");
   }
 
-  /** @throws UnsupportedOperationException because the browser bridge has no rumble output */
+  /**
+   * @throws UnsupportedOperationException because the browser bridge has no rumble output
+   */
   public void setRawRumble(RumbleType type, int value) {
     throw new UnsupportedOperationException("Controller rumble output is unavailable in wasmbot");
   }

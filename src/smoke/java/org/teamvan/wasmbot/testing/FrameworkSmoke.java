@@ -22,14 +22,23 @@ final class FrameworkSmoke {
     try {
       OpModeProbe opMode = new OpModeProbe();
       RobotController.setTimeSource(() -> 7_000_000_000L);
-      check(MathSharedStore.getTimestamp() == 7.0, "framework math timestamps must respect the configured clock");
+      check(
+          MathSharedStore.getTimestamp() == 7.0,
+          "framework math timestamps must respect the configured clock");
       RobotController.setTimeSource(WasmRuntime::nowNanos);
       opMode.startCompetition();
       opMode.startCompetition();
       expect(opMode.events, "simulationInit");
       clock.set(20_000_000);
       opMode.wasmTick();
-      expect(opMode.events, "simulationInit", "connected", "disabledPeriodic", "none", "robot", "simulation");
+      expect(
+          opMode.events,
+          "simulationInit",
+          "connected",
+          "disabledPeriodic",
+          "none",
+          "robot",
+          "simulation");
       opMode.events.clear();
       WasmRuntime.setEnabled(true);
       clock.set(40_000_000);
@@ -59,14 +68,18 @@ final class FrameworkSmoke {
       check(timed.periodics == 0 && timed.extras == 0, "custom periods must not run early");
       clock.set(30_000_000);
       timed.wasmTick();
-      check(timed.periodics == 0 && timed.extras == 1, "additional callback must honor its own deadline");
+      check(
+          timed.periodics == 0 && timed.extras == 1,
+          "additional callback must honor its own deadline");
       clock.set(40_000_000);
       timed.wasmTick();
-      check(timed.periodics == 1 && timed.simulations == 1 && timed.disabledInits == 1,
+      check(
+          timed.periodics == 1 && timed.simulations == 1 && timed.disabledInits == 1,
           "TimedRobot first mode init and periodic sequence");
       clock.set(90_000_000);
       timed.wasmTick();
-      check(timed.periodics == 2 && timed.extras == 2 && timed.simulations == 2,
+      check(
+          timed.periodics == 2 && timed.extras == 2 && timed.simulations == 2,
           "overdue callbacks must coalesce rather than replay missed expirations");
       check(timed.getLoopStartTime() == clock.get(), "loop timestamp must use the host clock");
       check(timed.initializations == 1, "simulationInit must only run once");
@@ -113,14 +126,45 @@ final class FrameworkSmoke {
   private static final class OpModeProbe extends OpModeRobot {
     final List<String> events = new ArrayList<>();
 
-    @Override public void simulationInit() { events.add("simulationInit"); }
-    @Override public void driverStationConnected() { events.add("connected"); }
-    @Override public void disabledInit() { events.add("disabledInit"); }
-    @Override public void disabledExit() { events.add("disabledExit"); }
-    @Override public void disabledPeriodic() { events.add("disabledPeriodic"); }
-    @Override public void nonePeriodic() { events.add("none"); }
-    @Override public void robotPeriodic() { events.add("robot"); }
-    @Override public void simulationPeriodic() { events.add("simulation"); }
+    @Override
+    public void simulationInit() {
+      events.add("simulationInit");
+    }
+
+    @Override
+    public void driverStationConnected() {
+      events.add("connected");
+    }
+
+    @Override
+    public void disabledInit() {
+      events.add("disabledInit");
+    }
+
+    @Override
+    public void disabledExit() {
+      events.add("disabledExit");
+    }
+
+    @Override
+    public void disabledPeriodic() {
+      events.add("disabledPeriodic");
+    }
+
+    @Override
+    public void nonePeriodic() {
+      events.add("none");
+    }
+
+    @Override
+    public void robotPeriodic() {
+      events.add("robot");
+    }
+
+    @Override
+    public void simulationPeriodic() {
+      events.add("simulation");
+    }
   }
 
   private static final class TimedProbe extends TimedRobot {
@@ -135,17 +179,33 @@ final class FrameworkSmoke {
       addPeriodic(() -> extras++, 0.03);
     }
 
-    @Override public void simulationInit() { initializations++; }
-    @Override public void disabledInit() { disabledInits++; }
-    @Override public void robotPeriodic() { periodics++; }
-    @Override public void simulationPeriodic() { simulations++; }
+    @Override
+    public void simulationInit() {
+      initializations++;
+    }
+
+    @Override
+    public void disabledInit() {
+      disabledInits++;
+    }
+
+    @Override
+    public void robotPeriodic() {
+      periodics++;
+    }
+
+    @Override
+    public void simulationPeriodic() {
+      simulations++;
+    }
   }
 
   private static final class ThrowingProbe extends OpModeRobot {
     final IllegalStateException failure = new IllegalStateException("framework-periodic-failure");
     int calls;
 
-    @Override public void robotPeriodic() {
+    @Override
+    public void robotPeriodic() {
       if (++calls == 1) {
         throw failure;
       }
