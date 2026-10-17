@@ -22,10 +22,26 @@ jobs:
             - name: Check out the repository
               uses: actions/checkout@v7
 
-            - name: Install Binaryen
+            - name: Cache AdvantageScope npm packages
+              uses: actions/cache@v4
+              with:
+                  path: akit/.npm-cache
+                  key: ${{ runner.os }}-advantage-scope-npm-e28580467
+                  restore-keys: |
+                      ${{ runner.os }}-advantage-scope-npm-
+
+            - name: Set up Binaryen
+              shell: bash
               run: |
-                  sudo apt-get update
-                  sudo apt-get install -y binaryen
+                  set -euo pipefail
+                  version="version_133"
+                  archive="binaryen-${version}-x86_64-linux.tar.gz"
+                  url="https://github.com/WebAssembly/binaryen/releases/download/${version}/${archive}"
+                  curl --fail --location --retry 3 --output "${RUNNER_TEMP}/${archive}" "${url}"
+                  echo "2dc9c7813f53705e5d1bfe6a1e8c2bfc2c3e2677bbb832297af4797782a37489  ${RUNNER_TEMP}/${archive}" | sha256sum --check
+                  mkdir -p "${RUNNER_TEMP}/binaryen"
+                  tar --extract --gzip --file "${RUNNER_TEMP}/${archive}" --directory "${RUNNER_TEMP}/binaryen" --strip-components=1
+                  echo "${RUNNER_TEMP}/binaryen/bin" >> "${GITHUB_PATH}"
 
             - name: Set up Node.js
               uses: actions/setup-node@v4

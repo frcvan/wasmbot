@@ -12,6 +12,7 @@ import { fileURLToPath } from "url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(scriptDirectory, "build");
+const npmCache = path.join(scriptDirectory, ".npm-cache");
 const distribution = "LITE";
 const ASCOPE_COMMIT = "e28580467";
 const skipDocs = process.env.WASMBOT_SKIP_DOCS === "true";
@@ -24,11 +25,15 @@ if (distribution !== "LITE" && distribution !== "LITEDS") {
     throw new Error(`Unsupported Lite distribution: ${distribution}`);
 }
 
-function run(command, args, cwd = scriptDirectory) {
+function run(command, args, cwd = scriptDirectory, environment = {}) {
     log(`running ${command} ${args.join(" ")} (cwd: ${cwd})`);
     execFileSync(command, args, {
         cwd,
-        env: { ...process.env, ASCOPE_DISTRIBUTION: distribution },
+        env: {
+            ...process.env,
+            ...environment,
+            ASCOPE_DISTRIBUTION: distribution
+        },
         stdio: "inherit"
     });
 }
@@ -92,7 +97,19 @@ log(`AdvantageScope source directory: ${root}`);
 cloneAscope(root);
 
 log("installing AdvantageScope dependencies");
-run(process.platform === "win32" ? "npm.cmd" : "npm", ["ci"], root);
+run(
+    process.platform === "win32" ? "npm.cmd" : "npm",
+    [
+        "ci",
+        "--cache",
+        npmCache,
+        "--prefer-offline",
+        "--no-audit",
+        "--no-fund"
+    ],
+    root,
+    { YOUTUBE_DL_SKIP_DOWNLOAD: "true" }
+);
 
 function patchHubHtml(filePath) {
     const script = `    <script type="module" src="../wasm/sim.js"></script>\n`;
