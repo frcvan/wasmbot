@@ -62,6 +62,24 @@ type HostEvent = {
     timestamp?: number;
     value?: unknown;
 };
+
+function normalizeHostValue(type: string, value: unknown): unknown {
+    // StructPublisher sends packed bytes as hex because Graal's JS bridge only accepts
+    // JSString reliably for this call. NT4 exposes struct samples as raw byte arrays.
+    // FIXME: make graalvm JS bridge accept Uint8Array and remove this hack.
+    if (
+        type.startsWith("struct:") &&
+        typeof value === "string" &&
+        value.length % 2 === 0 &&
+        /^[0-9a-fA-F]*$/.test(value)
+    ) {
+        const bytes = new Uint8Array(value.length / 2);
+        for (let i = 0; i < bytes.length; i++)
+            bytes[i] = Number.parseInt(value.slice(i * 2, i * 2 + 2), 16);
+        return bytes;
+    }
+    return value;
+}
 type Host = {
     snapshot(): HostTopic[];
     listen(listener: (event: HostEvent) => void): () => void;
@@ -382,7 +400,11 @@ export class NT4_Client {
             const hadData = this.dataTopics.has(topic.name);
             this.dataTopics.add(topic.name);
             if (!hadData && topic.value !== undefined)
-                this.enqueue(topic.name, topic.timestamp, topic.value);
+                this.enqueue(
+                    topic.name,
+                    topic.timestamp,
+                    normalizeHostValue(topic.type, topic.value)
+                );
         }
         this.schedule();
     }
@@ -420,7 +442,11 @@ export class NT4_Client {
             }
         } else {
             this.announce(event.topic);
-            this.enqueue(name, event.timestamp!, event.value);
+            this.enqueue(
+                name,
+                event.timestamp!,
+                normalizeHostValue(event.topic.type, event.value)
+            );
         }
     }
 

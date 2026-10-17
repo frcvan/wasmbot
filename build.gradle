@@ -86,7 +86,8 @@ def buildLite = tasks.register('buildLite', Exec) {
     description = 'Builds the bundled AdvantageScope Lite frontend.'
     workingDir(projectDir)
     commandLine('node', 'akit/buildLite.mjs')
-    inputs.files('akit/buildLite.mjs', 'akit/NT4.ts')
+    inputs.file(layout.projectDirectory.file('akit/buildLite.mjs'))
+    inputs.file(layout.projectDirectory.file('akit/NT4.ts'))
     outputs.dir('akit/build/lite/static')
 }
 

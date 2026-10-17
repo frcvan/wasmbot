@@ -12,14 +12,19 @@ import { fileURLToPath } from "url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(scriptDirectory, "build");
-const distribution = process.env.ASCOPE_DISTRIBUTION ?? "LITE";
+const distribution = "LITE";
+const ASCOPE_COMMIT = "e28580467";
+
+function log(message) {
+    console.log(`[buildLite] ${new Date().toISOString()} ${message}`);
+}
 
 if (distribution !== "LITE" && distribution !== "LITEDS") {
     throw new Error(`Unsupported Lite distribution: ${distribution}`);
 }
 
 function run(command, args, cwd = scriptDirectory) {
-    console.log(`> ${command} ${args.join(" ")}`);
+    log(`running ${command} ${args.join(" ")} (cwd: ${cwd})`);
     execFileSync(command, args, {
         cwd,
         env: { ...process.env, ASCOPE_DISTRIBUTION: distribution },
@@ -33,24 +38,58 @@ function copyDirectory(source, destination) {
 }
 
 function cloneAscope(destination) {
+    if (isAdvantageScopeRepository(destination)) {
+        log(`reusing AdvantageScope checkout at ${destination}`);
+        run("git", ["checkout", "--detach", ASCOPE_COMMIT], destination);
+        log(`checked out AdvantageScope revision ${ASCOPE_COMMIT}`);
+        return;
+    }
+
+    log(`creating a fresh AdvantageScope checkout at ${destination}`);
     fs.rmSync(destination, { recursive: true, force: true });
     fs.mkdirSync(destination, { recursive: true });
 
     run("git", [
         "clone",
-        "--depth=1",
+        "--filter=blob:none",
+        "--no-checkout",
         "https://github.com/Mechanical-Advantage/AdvantageScope.git",
         destination
     ]);
+    run("git", ["checkout", "--detach", ASCOPE_COMMIT], destination);
+    log(`checked out AdvantageScope revision ${ASCOPE_COMMIT}`);
 }
 
+function isAdvantageScopeRepository(destination) {
+    const gitDirectory = path.join(destination, ".git");
+    if (!fs.existsSync(gitDirectory)) return false;
+
+    try {
+        const origin = execFileSync(
+            "git",
+            ["config", "--get", "remote.origin.url"],
+            { cwd: destination, encoding: "utf8" }
+        )
+            .trim()
+            .replace(/\/+$/, "")
+            .replace(/\.git$/, "");
+        log(`found existing repository with origin ${origin}`);
+        return (
+            origin.endsWith("/Mechanical-Advantage/AdvantageScope") ||
+            origin.endsWith(":Mechanical-Advantage/AdvantageScope")
+        );
+    } catch {
+        log(`existing checkout at ${destination} is not a usable Git repository`);
+        return false;
+    }
+}
+
+log(`starting ${distribution} build`);
+log(`AdvantageScope source directory: ${root}`);
 cloneAscope(root);
 
-run(
-    process.platform === "win32" ? "npm.cmd" : "npm",
-    ["ci"],
-    root
-);
+log("installing AdvantageScope dependencies");
+run(process.platform === "win32" ? "npm.cmd" : "npm", ["ci"], root);
 
 function patchHubHtml(filePath) {
     const script = `    <script type="module" src="../wasm/sim.js"></script>\n`;
@@ -179,31 +218,47 @@ const originalAssetLoader = fs.readFileSync(assetLoaderPath, "utf8");
 const patchedAssetLoader = patchAssetLoader(originalAssetLoader);
 if (patchedAssetLoader !== originalAssetLoader)
     fs.writeFileSync(assetLoaderPath, patchedAssetLoader);
+log(
+    patchedAssetLoader !== originalAssetLoader
+        ? "patched AdvantageScope asset loader"
+        : "asset loader already supports static hosting"
+);
 
 const wasmCompilePath = path.join(root, "wasmCompile.mjs");
 const originalWasmCompile = fs.readFileSync(wasmCompilePath, "utf8");
 const patchedWasmCompile = patchWasmCompile(originalWasmCompile);
 if (patchedWasmCompile !== originalWasmCompile)
     fs.writeFileSync(wasmCompilePath, patchedWasmCompile);
+log(
+    patchedWasmCompile !== originalWasmCompile
+        ? "patched Emscripten version handling"
+        : "Emscripten version handling already patched"
+);
 
 patchNT4(fs.readFileSync(path.join(scriptDirectory, "NT4.ts"), "utf8"));
+log("installed Wasmbot NT4 adapter");
 
 try {
     // Generate the Lite bundles and WebAssembly module.
+    log("building TypeScript bundles");
     run(
         process.platform === "win32" ? "npm.cmd" : "npm",
         ["run", "compile"],
         root
     );
-    run(process.platform === "win32" ? "npm.cmd" : "npm", [
-        "run",
-        "wasm:compile"
-    ], root);
-    run(process.platform === "win32" ? "npm.cmd" : "npm", [
-        "run",
-        "docs:build-embed"
-    ], root);
+    run(
+        process.platform === "win32" ? "npm.cmd" : "npm",
+        ["run", "wasm:compile"],
+        root
+    );
+    log("building embedded documentation");
+    run(
+        process.platform === "win32" ? "npm.cmd" : "npm",
+        ["run", "docs:build-embed"],
+        root
+    );
 } finally {
+    log("restoring temporary AdvantageScope source patches");
     if (patchedAssetLoader !== originalAssetLoader)
         fs.writeFileSync(assetLoaderPath, originalAssetLoader);
     if (patchedWasmCompile !== originalWasmCompile)
@@ -212,6 +267,7 @@ try {
 
 // Copy files that are part of the static Lite distribution.
 const staticRoot = path.join(root, "lite", "static");
+log(`assembling static output at ${staticRoot}`);
 copyDirectory(path.join(root, "www"), path.join(staticRoot, "www"));
 copyDirectory(path.join(root, "docs", "build"), path.join(staticRoot, "docs"));
 patchHubHtml(path.join(staticRoot, "www", "hub.html"));
@@ -222,6 +278,6 @@ const assetRoot = path.join(staticRoot, "bundledAssets");
 const assetIndex = createAssetIndex(assetRoot);
 fs.writeFileSync(path.join(staticRoot, "assets"), JSON.stringify(assetIndex));
 
-console.log(
-    `Generated AdvantageScope ${distribution} in ${path.relative(root, staticRoot)}`
+log(
+    `generated AdvantageScope ${distribution} in ${path.relative(root, staticRoot)}`
 );

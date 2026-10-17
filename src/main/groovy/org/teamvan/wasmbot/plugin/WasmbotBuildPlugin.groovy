@@ -75,6 +75,9 @@ class WasmbotBuildPlugin implements Plugin<Project> {
         def nativeSmokeCompile = project.tasks.named('nativeSmokeCompile', BuildNativeImageTask)
         nativeCompile.configure { dependsOn(wasm.classesTaskName) }
         nativeSmokeCompile.configure { dependsOn(smoke.classesTaskName) }
+        // Keep native-image outputs sensitive to changes in the bundled runtime shadows.
+        nativeCompile.configure { inputs.files(runtime.java, wasm.java) }
+        nativeSmokeCompile.configure { inputs.files(runtime.java, smoke.java) }
         [nativeCompile, nativeSmokeCompile].each { compile ->
             compile.configure {
                 inputs.property('wasmbotJspiInstantiate', JspiLoaderPatch.INSTANTIATE)
