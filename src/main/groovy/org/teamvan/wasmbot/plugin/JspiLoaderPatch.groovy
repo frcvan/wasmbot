@@ -10,7 +10,7 @@ final class JspiLoaderPatch implements Action<Task>, Serializable {
     static final String INSTANTIATE = 'await WebAssembly.instantiate(file, wasmImports)'
     static final String INSTANTIATE_REPLACEMENT = 'await globalThis.wasmbot.continuations.instantiate(file, wasmImports)'
     static final String JAVA_NATIVE = 'javaNative: Symbol("__java_native__"),'
-    static final String JAVA_NATIVE_REPLACEMENT = 'javaNative: (globalThis.wasmbot.javaNative = Symbol("__java_native__")),'
+    static final String JAVA_NATIVE_REPLACEMENT = 'javaNative: ((globalThis.wasmbot || (globalThis.wasmbot = {})).javaNative = Symbol("__java_native__")),'
 
     @Override
     void execute(Task task) {

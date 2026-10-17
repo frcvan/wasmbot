@@ -81,6 +81,15 @@ publishing.publications.withType(MavenPublication).configureEach {
 
 // Runtime sources are deliberately not part of this build's Java source sets:
 // the consuming robot compiles them against its own WPILib and vendor versions.
+def buildLite = tasks.register('buildLite', Exec) {
+    group = 'WASM'
+    description = 'Builds the bundled AdvantageScope Lite frontend.'
+    workingDir(projectDir)
+    commandLine('node', 'akit/buildLite.mjs')
+    inputs.files('akit/buildLite.mjs', 'akit/NT4.ts')
+    outputs.dir('akit/build/lite/static')
+}
+
 def bundleWasmLibrary = tasks.register('bundleWasmLibrary', Zip) {
     description = 'Bundles the reusable runtime sources, smoke sources, frontend, and tools.'
     archiveFileName = 'library.zip'
@@ -92,9 +101,11 @@ def bundleWasmLibrary = tasks.register('bundleWasmLibrary', Zip) {
     from('src/runtime/java') { into 'runtime/java' }
     from('src/runtime/resources') { into 'runtime/resources' }
     from('src/smoke/java') { into 'tests/java' }
-    from('web') { into 'web' }
+    from('shim') { into 'shim' }
     from('tools') { into 'tools' }
     from('WPILib-License.md') { into 'licenses' }
+    from('akit/build/lite/static') { into 'web/advantagescope' }
+    dependsOn(buildLite)
 }
 
 tasks.named('processResources') {

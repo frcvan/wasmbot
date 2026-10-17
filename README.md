@@ -168,10 +168,11 @@ From the consuming robot project:
 ./gradlew wasmRun
 ./gradlew wasmSmoke
 ./gradlew wasmSite
+./gradlew advantagescope
 python -m http.server 8099 --directory build/wasm/site
 ```
 
-Open `http://localhost:8099/sim/`. On Windows, `.\gradlew.bat` is equivalent to `./gradlew`.
+Open `http://localhost:8099/`. On Windows, `.\gradlew.bat` is equivalent to `./gradlew`.
 
 | Task                 | Result                                                                                                                                                                                                                          |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -179,7 +180,8 @@ Open `http://localhost:8099/sim/`. On Windows, `.\gradlew.bat` is equivalent to 
 | `wasmRun`            | Starts the consumer's actual Robot, advances disabled/enabled ticks, and reports telemetry count and tick latency.                                                                                                              |
 | `nativeSmokeCompile` | Builds the library's native behavioral smoke image.                                                                                                                                                                             |
 | `wasmSmoke`          | Exercises RobotBase startup, constructor detection, lifecycle order/cadence/stop, scheduler execution counts, dynamics, serialization, continuations, cancellation, child awaiting, exceptions, and overlapping-tick rejection. |
-| `wasmSite`           | Stages the complete generic browser frontend at `build/wasm/site/sim/`.                                                                                                                                                         |
+| `wasmSite`           | Stages the generic browser frontend and native image at `build/wasm/site/wasm/`.                                                                                                                                                 |
+| `advantagescope`     | Stages the bundled AdvantageScope Lite frontend at `build/wasm/site/`.                                                                                                                                                           |
 
 The staged browser assets always use canonical `wasm.js`/`wasm.js.wasm` names, even for a native image named `counter`. Serve the staged directory over HTTP, not `file://`.
 
@@ -219,8 +221,8 @@ The WASM NetworkTables Java surface currently supports default-instance typed do
 All project-owned JavaScript hooks and exports live on the single global object `globalThis.wasmbot`; there are no standalone global aliases. GraalVM's `GraalVM` global and the browser's `document` remain unchanged. For a custom frontend, initialize the clock, driver-station hook, and JSPI continuation engine on this object **before** installing NetworkTables or importing the image, and therefore before `GraalVM.run()`:
 
 ```js
-import { createWasmContinuations } from "./sim/continuations.js";
-import { createNetworkTables } from "./sim/networktables.js";
+import { createWasmContinuations } from "./shim/continuations.js";
+import { createNetworkTables } from "./shim/networktables.js";
 
 let nowNanos = 0;
 const ds = { enabled: false, alliance: "blue", leftX: 0, leftY: 0, rightX: 0 };
@@ -253,7 +255,7 @@ The virtual HID on port zero exposes the three host axes through raw axes 0/1/2 
 
 ### AdvantageScope-compatible NT4 client
 
-[`web/sim/NT4.ts`](web/sim/NT4.ts) is a self-contained replacement for AdvantageScope's `src/hub/dataSources/nt4/NT4.ts`. It exports `NT4_Client`, `NT4_Topic`, and all three `NT4_PORTS_*` constants, with the same constructor and public methods. Copy that file into the consuming frontend; existing imports and client construction can remain unchanged. This repository does not modify the sibling AdvantageScope checkout.
+[`akit/NT4.ts`](akit/NT4.ts) is a self-contained replacement for AdvantageScope's `src/hub/dataSources/nt4/NT4.ts`. It exports `NT4_Client`, `NT4_Topic`, and all three `NT4_PORTS_*` constants, with the same constructor and public methods. Copy that file into the consuming frontend; existing imports and client construction can remain unchanged. This repository does not modify the sibling AdvantageScope checkout.
 
 The frontend and Wasm robot must share the same `globalThis.wasmbot.nt` host (and `wasmbot.nowNanos` clock). The supplied viewer and CLI harnesses install it automatically; a custom frontend uses the setup above. This is an in-process transport, not a WebSocket server: address, ports, and app name are accepted for API compatibility but do not select a remote endpoint. No MessagePack dependency is required.
 

@@ -6,6 +6,7 @@ import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.tasks.SourceSet
 import org.gradle.api.tasks.SourceSetContainer
+import org.gradle.api.tasks.Copy
 import org.gradle.api.tasks.Sync
 import org.gradle.api.tasks.compile.JavaCompile
 
@@ -93,12 +94,20 @@ class WasmbotBuildPlugin implements Plugin<Project> {
 
         project.tasks.register('wasmSite', Sync) {
             group = 'WASM'
-            description = 'Stages the WASM browser frontend and native image under build/wasm/site/sim.'
+            description = 'Stages the WASM browser frontend and native image under build/wasm/site/wasm.'
             dependsOn(prepare, nativeCompile)
-            into(project.layout.buildDirectory.dir('wasm/site/sim'))
-            from(prepare.flatMap { it.outputDirectory.dir('web/sim') })
+            into(project.layout.buildDirectory.dir('wasm/site/wasm'))
+            from(prepare.flatMap { it.outputDirectory.dir('shim') })
             from(javascript) { rename { 'wasm.js' } }
             from(webAssembly) { rename { 'wasm.js.wasm' } }
+        }
+
+        project.tasks.register('advantagescope', Copy) {
+            group = 'WASM'
+            description = 'Stages the bundled AdvantageScope Lite frontend under build/wasm/site.'
+            dependsOn(prepare)
+            into(project.layout.buildDirectory.dir('wasm/site'))
+            from(prepare.flatMap { it.outputDirectory.dir('web/advantagescope') })
         }
 
         project.tasks.register('wasmRun', WasmHarnessTask) {
