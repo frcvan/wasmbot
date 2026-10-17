@@ -76,8 +76,10 @@ class WasmbotBuildPlugin implements Plugin<Project> {
         nativeSmokeCompile.configure { dependsOn(smoke.classesTaskName) }
         [nativeCompile, nativeSmokeCompile].each { compile ->
             compile.configure {
-                inputs.property('wasmbotJspiOriginal', JspiLoaderPatch.ORIGINAL)
-                inputs.property('wasmbotJspiReplacement', JspiLoaderPatch.REPLACEMENT)
+                inputs.property('wasmbotJspiInstantiate', JspiLoaderPatch.INSTANTIATE)
+                inputs.property('wasmbotJspiInstantiateReplacement', JspiLoaderPatch.INSTANTIATE_REPLACEMENT)
+                inputs.property('wasmbotJspiJavaNative', JspiLoaderPatch.JAVA_NATIVE)
+                inputs.property('wasmbotJspiJavaNativeReplacement', JspiLoaderPatch.JAVA_NATIVE_REPLACEMENT)
                 doLast(new JspiLoaderPatch())
             }
         }

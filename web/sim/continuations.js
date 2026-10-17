@@ -10,6 +10,22 @@ export function createWasmContinuations() {
   }
 
   const states = new WeakMap();
+  // Graal's JS proxy is not a WASM externref. JSPI rejects it with
+  // "type incompatibility when transforming from/to JS". The loader publishes
+  // the unique symbol whose proxy get-trap returns the raw WASM object.
+  function wasmReceiver(value) {
+    const javaNative = globalThis.wasmbot?.javaNative;
+    if (typeof javaNative !== "symbol") {
+      throw new Error("Graal's javaNative symbol was not published; the JSPI loader patch is missing.");
+    }
+    if (value == null || (typeof value !== "object" && typeof value !== "function")) return value;
+    const native = value[javaNative];
+    if (native === undefined) {
+      throw new TypeError("WASM export receiver is not a raw externref.");
+    }
+    return native;
+  }
+
   let instantiationStarted = false;
   let continuationBody = null;
   let tickBody = null;
@@ -101,7 +117,7 @@ export function createWasmContinuations() {
   function create(continuation) {
     const handle = {};
     states.set(handle, {
-      continuation,
+      continuation: wasmReceiver(continuation),
       phase: "new",
       waiter: null,
       wake: null,
@@ -182,7 +198,7 @@ export function createWasmContinuations() {
 
   function bindTick(receiver) {
     if (tickReceiver !== null) throw new Error("The WASM tick receiver is already bound.");
-    tickReceiver = receiver;
+    tickReceiver = wasmReceiver(receiver);
   }
 
   async function tick() {
