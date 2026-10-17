@@ -21,6 +21,7 @@ pluginManagement {
             url = new File(wpilibHome, 'maven')
         }
         mavenLocal()
+        mavenCentral()
         gradlePluginPortal()
     }
 }

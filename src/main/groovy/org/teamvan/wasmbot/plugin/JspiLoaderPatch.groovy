@@ -1,4 +1,4 @@
-package org.teamvan.wasmbot.build
+package org.teamvan.wasmbot.plugin
 
 import org.graalvm.buildtools.gradle.tasks.BuildNativeImageTask
 import org.gradle.api.Action

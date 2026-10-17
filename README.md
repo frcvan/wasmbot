@@ -4,6 +4,10 @@
 
 The plugin owns the runtime/shadows, JSPI continuation engine, native build configuration, generic browser telemetry viewer, and native smoke suite. It contains no project-specific drivetrain acceptance tests or Pose-channel assumptions. Struct/protobuf publishing retains its existing hex wire format.
 
+## LLM usage
+
+LLMs were used to generate code for this project. All generated output was reviewed and tested.
+
 ## Requirements
 
 - Gradle 9.4.1, Java 25, and WPILib 2027 alpha-7 with its Commands V3 vendordep are the supported baseline.
@@ -37,26 +41,22 @@ includeBuild('wasmbot')
 Keep the normal generated WPILib repository configuration. Add this entry to the consumer's existing `plugins` block:
 
 ```groovy
-id 'wasmbot'
+id 'org.teamvan.wasmbot'
 ```
 
 The plugin JAR bundles runtime Java sources, metadata, browser assets, tools, and smoke sources. Each consumer compiles the runtime against its own WPILib dependency classpath. The included build tracks source and resource changes automatically.
 
 ### Published artifact
 
-From this repository's root:
-
-```sh
-./gradlew -p wasmbot check assemble publishToMavenLocal
-```
-
-With an installed compatible Gradle, run `gradle check assemble publishToMavenLocal` from this standalone build instead. Add `mavenLocal()` to the consumer's existing `pluginManagement.repositories`, then apply:
+Add `mavenCentral()` to the consumer's existing `pluginManagement.repositories` in `settings.gradle`, keeping its WPILib and Gradle Plugin Portal repositories. Then apply the published version in `build.gradle`:
 
 ```groovy
-id 'wasmbot' version '0.1.0'
+id 'org.teamvan.wasmbot' version '0.1.0'
 ```
 
-The implementation coordinate is `org.teamvan.wasmbot:wasmbot:0.1.0`, resolved through the `wasmbot` Gradle plugin marker. The [independent example](examples/commands-v3) consumes that published plugin, not an included source build. A team Maven server can host the same publications.
+The implementation coordinate is `org.teamvan.wasmbot:wasmbot:0.1.0`, resolved through the `org.teamvan.wasmbot` Gradle plugin marker. Both are published to Maven Central, not the Gradle Plugin Portal. The plugin ID replaces the old unqualified `wasmbot` ID; the `wasmbot { ... }` extension and runtime packages are unchanged.
+
+For local development, run `gradle check assemble publishToMavenLocal` from this standalone build with Gradle 9.4.1 and Java 25, then add `mavenLocal()` before `mavenCentral()` in the consumer's `pluginManagement.repositories`. The [independent example](examples/commands-v3) uses this published-plugin path, not an included source build.
 
 Do not add the core runtime as a desktop `implementation` dependency. The plugin adds it only to the WASM source sets.
 
@@ -89,11 +89,11 @@ wasmbot {
 }
 ```
 
-| Property | Default | Meaning |
-|---|---|---|
-| `mainClass` | Required | Ordinary entry point calling `RobotBase.startRobot(Robot::new)`. |
-| `imageName` | `wasm` | Native artifact basename, without extensions. |
-| `javascriptRuntime` | `bun` | JSPI-capable executable on `PATH`, or an absolute executable path. |
+| Property            | Default  | Meaning                                                            |
+| ------------------- | -------- | ------------------------------------------------------------------ |
+| `mainClass`         | Required | Ordinary entry point calling `RobotBase.startRobot(Robot::new)`.   |
+| `imageName`         | `wasm`   | Native artifact basename, without extensions.                      |
+| `javascriptRuntime` | `bun`    | JSPI-capable executable on `PATH`, or an absolute executable path. |
 
 The plugin applies the native-build plugin itself. Remove obsolete local WASM adapters, copied runtime sources, native binary definitions, and loader-patching scripts when migrating. The public extension is `wasmbot`.
 
@@ -116,11 +116,7 @@ flowchart LR
 ```java
 @Override
 public void robotPeriodic() {
-  if (RobotState.isEnabled()) {
-    Scheduler.getDefault().run();
-  } else {
-    Scheduler.getDefault().cancelAll();
-  }
+  Scheduler.getDefault().run();
   Telemetry.log("Example/Counter", counter.ticks());
   Telemetry.log("Example/Enabled", RobotState.isEnabled());
   Telemetry.log("Example/Wasmbot", Boolean.getBoolean("wasmbot"));
@@ -176,13 +172,13 @@ python -m http.server 8099 --directory build/wasm/site
 
 Open `http://localhost:8099/sim/`. On Windows, `.\gradlew.bat` is equivalent to `./gradlew`.
 
-| Task | Result |
-|---|---|
-| `nativeCompile` | `build/native/nativeCompile/<imageName>.js` and `<imageName>.js.wasm`. |
-| `wasmRun` | Starts the consumer's actual Robot, advances disabled/enabled ticks, and reports telemetry count and tick latency. |
-| `nativeSmokeCompile` | Builds the library's native behavioral smoke image. |
-| `wasmSmoke` | Exercises RobotBase startup, constructor detection, lifecycle order/cadence/stop, scheduler execution counts, dynamics, serialization, continuations, cancellation, child awaiting, exceptions, and overlapping-tick rejection. |
-| `wasmSite` | Stages the complete generic browser frontend at `build/wasm/site/sim/`. |
+| Task                 | Result                                                                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nativeCompile`      | `build/native/nativeCompile/<imageName>.js` and `<imageName>.js.wasm`.                                                                                                                                                          |
+| `wasmRun`            | Starts the consumer's actual Robot, advances disabled/enabled ticks, and reports telemetry count and tick latency.                                                                                                              |
+| `nativeSmokeCompile` | Builds the library's native behavioral smoke image.                                                                                                                                                                             |
+| `wasmSmoke`          | Exercises RobotBase startup, constructor detection, lifecycle order/cadence/stop, scheduler execution counts, dynamics, serialization, continuations, cancellation, child awaiting, exceptions, and overlapping-tick rejection. |
+| `wasmSite`           | Stages the complete generic browser frontend at `build/wasm/site/sim/`.                                                                                                                                                         |
 
 The staged browser assets always use canonical `wasm.js`/`wasm.js.wasm` names, even for a native image named `counter`. Serve the staged directory over HTTP, not `file://`.
 
@@ -214,12 +210,12 @@ That example uses a normal `Main` and `Robot`, a real scheduler-driven counter, 
 
 For a custom frontend, install `createWasmContinuations()` from `sim/continuations.js` as `globalThis.wasmContinuations` **before** `GraalVM.run()`. Install these functions before `wasmStart()`:
 
-| Function | Contract |
-|---|---|
-| `wasmNowNanos()` | Monotonic simulated time, in nanoseconds. |
-| `wasmDs()` | `{enabled, alliance, leftX, leftY, rightX}`; alliance is `"red"` or `"blue"`, axes are in `[-1, 1]`. |
-| `wasmNtGet(path)` | Current host value, or `undefined`. The supplied viewer returns `undefined`. |
-| `wasmNtPut(path, value)` | Receives an ordinary JavaScript telemetry value. |
+| Function                 | Contract                                                                                             |
+| ------------------------ | ---------------------------------------------------------------------------------------------------- |
+| `wasmNowNanos()`         | Monotonic simulated time, in nanoseconds.                                                            |
+| `wasmDs()`               | `{enabled, alliance, leftX, leftY, rightX}`; alliance is `"red"` or `"blue"`, axes are in `[-1, 1]`. |
+| `wasmNtGet(path)`        | Current host value, or `undefined`. The supplied viewer returns `undefined`.                         |
+| `wasmNtPut(path, value)` | Receives an ordinary JavaScript telemetry value.                                                     |
 
 Advance the host clock by 20 ms per default tick and **await the `wasmTick()` Promise before starting another tick**. The supplied viewer serializes ticks and reports startup/runtime failures. JSPI requires neither `SharedArrayBuffer` nor cross-origin isolation.
 

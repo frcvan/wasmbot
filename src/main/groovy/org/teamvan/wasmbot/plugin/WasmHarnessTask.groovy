@@ -1,4 +1,4 @@
-package org.teamvan.wasmbot.build
+package org.teamvan.wasmbot.plugin
 
 import javax.inject.Inject
 import org.gradle.api.DefaultTask

@@ -1,11 +1,15 @@
+import com.vanniktech.maven.publish.GradlePlugin
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.SourcesJar
+
 plugins {
     id 'groovy'
     id 'java-gradle-plugin'
-    id 'maven-publish'
+    id 'com.vanniktech.maven.publish' version '0.37.0'
 }
 
 group = 'org.teamvan.wasmbot'
-version = '0.1.0'
+version = providers.gradleProperty('releaseVersion').getOrElse('0.1.0')
 description = 'Source-bundled WPILib runtime and tooling for GraalVM Web Image.'
 
 repositories {
@@ -21,7 +25,7 @@ dependencies {
 gradlePlugin {
     plugins {
         wasmbot {
-            id = 'wasmbot'
+            id = 'org.teamvan.wasmbot'
             implementationClass = 'org.teamvan.wasmbot.plugin.WasmbotBuildPlugin'
             displayName = 'Wasmbot'
             description = project.description
@@ -29,8 +33,49 @@ gradlePlugin {
     }
 }
 
-java {
-    withSourcesJar()
+def groovydocJar = tasks.register('groovydocJar', Jar) {
+    archiveClassifier = 'javadoc'
+    from(tasks.named('groovydoc'))
+}
+
+mavenPublishing {
+    configure(new GradlePlugin(new JavadocJar.None(), new SourcesJar.Sources()))
+    publishToMavenCentral()
+    // Tagged releases require signing; local development publications do not.
+    if (providers.gradleProperty('releaseVersion').isPresent()) {
+        signAllPublications()
+    }
+    pom {
+        name = 'Wasmbot'
+        description = project.description
+        url = 'https://github.com/frcvan/wasmbot'
+        inceptionYear = '2026'
+        licenses {
+            license {
+                name = 'MIT License'
+                url = 'https://opensource.org/license/mit/'
+                distribution = 'repo'
+            }
+        }
+        developers {
+            developer {
+                id = 'frcvan'
+                name = 'Team V.A.N.'
+                url = 'https://github.com/frcvan'
+            }
+        }
+        scm {
+            url = 'https://github.com/frcvan/wasmbot'
+            connection = 'scm:git:https://github.com/frcvan/wasmbot.git'
+            developerConnection = 'scm:git:ssh://git@github.com/frcvan/wasmbot.git'
+        }
+    }
+}
+
+publishing.publications.withType(MavenPublication).configureEach {
+    if (name == 'pluginMaven') {
+        artifact(groovydocJar)
+    }
 }
 
 // Runtime sources are deliberately not part of this build's Java source sets:

@@ -1,4 +1,4 @@
-package org.teamvan.wasmbot.build
+package org.teamvan.wasmbot.plugin
 
 import java.security.MessageDigest
 import javax.inject.Inject
@@ -15,7 +15,7 @@ import org.gradle.api.tasks.TaskAction
 /** Materializes the exact source-and-asset bundle shipped inside the plugin JAR. */
 @CacheableTask
 abstract class PrepareWasmLibrary extends DefaultTask {
-    private static final String RESOURCE = '/org/teamvan/wasmbot/build/library.zip'
+    private static final String RESOURCE = '/org/teamvan/wasmbot/plugin/library.zip'
 
     @OutputDirectory
     abstract DirectoryProperty getOutputDirectory()
