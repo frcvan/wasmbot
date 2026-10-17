@@ -1,13 +1,5 @@
 export function createWasmContinuations() {
-  if (
-    typeof WebAssembly === "undefined" ||
-    typeof WebAssembly.Suspending !== "function" ||
-    typeof WebAssembly.promising !== "function"
-  ) {
-    throw new Error(
-      "WASM continuations require JSPI: WebAssembly.Suspending and WebAssembly.promising must be available.",
-    );
-  }
+  if (typeof WebAssembly === "undefined") throw new Error("WebAssembly is not available.");
 
   const states = new WeakMap();
   // Graal's JS proxy is not a WASM externref. JSPI rejects it with
@@ -62,21 +54,45 @@ export function createWasmContinuations() {
           wrappedNamespace = { ...namespace };
           imports[moduleName] = wrappedNamespace;
         }
-        wrappedNamespace[name] = new WebAssembly.Suspending(imported);
+        wrappedNamespace[name] = imported;
       }
     }
-    for (const [method, name] of Object.entries(found)) {
-      if (name === null) throw new Error(`Missing ${method} WASM import.`);
+
+    const continuationImports = Object.values(found).filter((name) => name !== null);
+    if (continuationImports.length !== 0 && continuationImports.length !== Object.keys(found).length) {
+      for (const [method, name] of Object.entries(found)) {
+        if (name === null) throw new Error(`Missing ${method} WASM import.`);
+      }
+    }
+
+    const hasContinuations = continuationImports.length === Object.keys(found).length;
+    if (hasContinuations) {
+      if (typeof WebAssembly.Suspending !== "function" || typeof WebAssembly.promising !== "function") {
+        throw new Error(
+          "WASM continuations require JSPI: WebAssembly.Suspending and WebAssembly.promising must be available.",
+        );
+      }
+      for (const [moduleName, namespace] of Object.entries(wasmImports)) {
+        const wrappedNamespace = { ...namespace };
+        for (const [name, imported] of Object.entries(namespace)) {
+          if (Object.values(found).includes(`${moduleName}.${name}`)) {
+            wrappedNamespace[name] = new WebAssembly.Suspending(imported);
+          }
+        }
+        imports[moduleName] = wrappedNamespace;
+      }
     }
 
     const result = await WebAssembly.instantiate(bytes, imports);
     const instance = result instanceof WebAssembly.Instance ? result : result.instance;
-    const bodyExport = findExport(instance.exports, "wasmContinuationBody", 1);
     const tickExport = findExport(instance.exports, "tick", 1);
-    const promisingBody = WebAssembly.promising(bodyExport);
-    const promisingTick = WebAssembly.promising(tickExport);
-    continuationBody = promisingBody;
-    tickBody = promisingTick;
+    if (hasContinuations) {
+      const bodyExport = findExport(instance.exports, "wasmContinuationBody", 1);
+      continuationBody = WebAssembly.promising(bodyExport);
+      tickBody = WebAssembly.promising(tickExport);
+    } else {
+      tickBody = tickExport;
+    }
     return result;
   }
 
