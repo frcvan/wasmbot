@@ -7,13 +7,14 @@
 // defaults to wasm. The directory must contain <imageName>.js and <imageName>.js.wasm.
 //
 // It shims the handful of globals the browser page (web/sim/sim.js) provides,
-// imports the GraalVM glue, runs the image, then calls wasmStart()/wasmTick().
+// imports the GraalVM glue, runs the image, then calls wasmbot.start()/wasmbot.tick().
 // Any Java throwable is printed with its message chain and, when the image
 // exposes one, its Java backtrace.
 import path from "node:path";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { createWasmContinuations } from "../../web/sim/continuations.js";
+import { createNetworkTables } from "../../web/sim/networktables.js";
 
 const args = process.argv.slice(2);
 if (args.length > 2 || args.some((arg) => arg.startsWith("--"))) {
@@ -30,15 +31,19 @@ globalThis.document = {
 let nowNanos = 0;
 const telemetry = new Map();
 const ds = { enabled: false, alliance: "blue", leftX: 0, leftY: 0, rightX: 0 };
-globalThis.wasmNowNanos = () => nowNanos;
-globalThis.wasmDs = () => ds;
-globalThis.wasmNtGet = () => undefined;
-globalThis.wasmNtPut = (p, v) => {
-  assert.equal(typeof p, "string", "telemetry paths must be JS strings");
-  telemetry.set(p, v);
+globalThis.wasmbot = {
+  nowNanos: () => nowNanos,
+  driverStation: () => ds,
+  continuations: createWasmContinuations(),
 };
+const networkTables = createNetworkTables(() => nowNanos);
+networkTables.install();
+networkTables.listen((event) => {
+  if (event.kind !== "value") return;
+  assert.equal(typeof event.topic.name, "string", "telemetry paths must be JS strings");
+  telemetry.set(event.topic.name, event.value);
+});
 
-globalThis.wasmContinuations = createWasmContinuations();
 await import(pathToFileURL(imagePath).href);
 
 const config = new globalThis.GraalVM.Config();
@@ -66,12 +71,12 @@ try {
   const tick = async (count) => {
     for (let i = 0; i < count; i++) {
       nowNanos += 20_000_000;
-      await globalThis.wasmTick();
+      await globalThis.wasmbot.tick();
       ticks++;
     }
   };
-  globalThis.wasmStart();
-  globalThis.wasmStart(); // Repeated startup must not rebuild or reset the robot.
+  globalThis.wasmbot.start();
+  globalThis.wasmbot.start(); // Repeated startup must not rebuild or reset the robot.
   await tick(25);
   ds.enabled = true;
   await tick(100);

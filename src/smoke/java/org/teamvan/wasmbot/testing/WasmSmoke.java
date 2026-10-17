@@ -216,7 +216,7 @@ public final class WasmSmoke {
         "state"
       },
       value =
-          "globalThis.wasmProbe = {beginYield, beginPark, cancel, beginAwait, beginFailure, reschedule, state};")
+          "globalThis.wasmbot.probe = {beginYield, beginPark, cancel, beginAwait, beginFailure, reschedule, state};")
   private static native void expose(
       Runnable beginYield,
       Runnable beginPark,

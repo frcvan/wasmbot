@@ -8,7 +8,7 @@ import org.gradle.api.Task
 /** Installs JSPI before instantiation, wrapping only the continuation suspension imports. */
 final class JspiLoaderPatch implements Action<Task>, Serializable {
     static final String ORIGINAL = 'await WebAssembly.instantiate(file, wasmImports)'
-    static final String REPLACEMENT = 'await globalThis.wasmContinuations.instantiate(file, wasmImports)'
+    static final String REPLACEMENT = 'await globalThis.wasmbot.continuations.instantiate(file, wasmImports)'
 
     @Override
     void execute(Task task) {

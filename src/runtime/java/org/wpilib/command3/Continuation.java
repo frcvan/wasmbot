@@ -153,12 +153,12 @@ final class Continuation {
   }
 
   // This is the only dependency on Graal's private Java-to-WASM reference conversion helper.
-  @JS("return globalThis.wasmContinuations.create(conversion.unproxy(continuation));")
+  @JS("return globalThis.wasmbot.continuations.create(conversion.unproxy(continuation));")
   private static native JSObject create(Continuation continuation);
 
-  @JS("return globalThis.wasmContinuations.resume(state);")
+  @JS("return globalThis.wasmbot.continuations.resume(state);")
   private static native void wasmContinuationResume(JSObject state);
 
-  @JS("return globalThis.wasmContinuations.yield(state);")
+  @JS("return globalThis.wasmbot.continuations.yield(state);")
   private static native void wasmContinuationYield(JSObject state);
 }

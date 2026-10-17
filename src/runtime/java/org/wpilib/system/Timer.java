@@ -1,6 +1,6 @@
 package org.wpilib.system;
 
-/** Wasm stand-in. Time comes from {@code wasmNowNanos}, not HAL. */
+/** Wasm stand-in. Time comes from {@code wasmbot.nowNanos}, not HAL. */
 public class Timer {
   /**
    * @return configured robot time in seconds; JavaScript monotonic time by default

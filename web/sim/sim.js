@@ -1,4 +1,5 @@
 import { createWasmContinuations } from "./continuations.js";
+import { createNetworkTables } from "./networktables.js";
 
 const PERIOD_SECONDS = 0.02;
 const keys = new Set();
@@ -19,20 +20,24 @@ const enabled = document.querySelector("#enabled");
 const telemetryBody = document.querySelector("#telemetry");
 const noTelemetry = document.querySelector("#no-telemetry");
 
-window.wasmNowNanos = () => nowNanos;
-window.wasmDs = () => {
-  driverStation.enabled = enabled.checked;
-  driverStation.alliance = keys.has("shift") ? "red" : "blue";
-  driverStation.leftX = axis("a", "d");
-  driverStation.leftY = axis("w", "s");
-  driverStation.rightX = axis("q", "e");
-  return driverStation;
+const hooks = globalThis.wasmbot = {
+  nowNanos: () => nowNanos,
+  driverStation: () => {
+    driverStation.enabled = enabled.checked;
+    driverStation.alliance = keys.has("shift") ? "red" : "blue";
+    driverStation.leftX = axis("a", "d");
+    driverStation.leftY = axis("w", "s");
+    driverStation.rightX = axis("q", "e");
+    return driverStation;
+  },
 };
-window.wasmNtGet = () => undefined;
-window.wasmNtPut = (path, value) => {
-  telemetry.set(path, value);
-  dirtyPaths.add(path);
-};
+const networkTables = createNetworkTables(() => nowNanos);
+networkTables.install();
+networkTables.listen((event) => {
+  if (event.kind !== "value") return;
+  telemetry.set(event.topic.name, event.value);
+  dirtyPaths.add(event.topic.name);
+});
 
 addEventListener("keydown", (event) => {
   keys.add(event.key.toLowerCase());
@@ -80,7 +85,7 @@ function paintTelemetry() {
 }
 
 try {
-  globalThis.wasmContinuations = createWasmContinuations();
+  hooks.continuations = createWasmContinuations();
   const BUILT_FILE = "wasm.js";
   await import(`./${BUILT_FILE}`);
 
@@ -88,7 +93,7 @@ try {
   config.wasm_path = `./${BUILT_FILE}.wasm`;
   await GraalVM.run({}, config);
 
-  window.wasmStart();
+  hooks.start();
   paintTelemetry();
   status.textContent = "Running";
   let ticking = false;
@@ -97,7 +102,7 @@ try {
     ticking = true;
     try {
       nowNanos += PERIOD_SECONDS * 1e9;
-      await window.wasmTick();
+      await hooks.tick();
       paintTelemetry();
     } catch (error) {
       clearInterval(timer);

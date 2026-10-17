@@ -99,11 +99,11 @@ The plugin applies the native-build plugin itself. Remove obsolete local WASM ad
 
 ## Robot lifecycle and the command scheduler
 
-The host installs the runtime and invokes `wasmStart()`. Wasmbot installs its telemetry backend, refreshes driver-station data, constructs the real `Robot` once, and starts a nonblocking framework lifecycle. For the 2027 SDK, initialization belongs in the constructor; `simulationInit()` follows exactly once.
+The host installs the runtime and invokes `wasmbot.start()`. Wasmbot installs its telemetry backend, refreshes driver-station data, constructs the real `Robot` once, and starts a nonblocking framework lifecycle. For the 2027 SDK, initialization belongs in the constructor; `simulationInit()` follows exactly once.
 
 ```mermaid
 flowchart LR
-    Host[Await wasmTick] --> DS[Refresh driver station]
+    Host[Await wasmbot.tick] --> DS[Refresh driver station]
     DS --> Due[Run due framework callbacks]
     Due --> RP[Robot.robotPeriodic]
     RP --> App[Application-owned scheduler and IO]
@@ -118,6 +118,7 @@ flowchart LR
 public void robotPeriodic() {
   Scheduler.getDefault().run();
   Telemetry.log("Example/Counter", counter.ticks());
+  directCounter.set(counter.ticks());
   Telemetry.log("Example/Enabled", RobotState.isEnabled());
   Telemetry.log("Example/Wasmbot", Boolean.getBoolean("wasmbot"));
 }
@@ -204,24 +205,72 @@ From this repository's root:
 python -m http.server 8099 --directory wasmbot/examples/commands-v3/build/wasm/site
 ```
 
-That example uses a normal `Main` and `Robot`, a real scheduler-driven counter, a different image name, and no core imports in shared Java. The viewer shows `/Example/Counter`, `/Example/Enabled`, and `/Example/Wasmbot`.
+That example uses a normal `Main` and `Robot`, a real scheduler-driven counter, a different image name, and no core imports in shared Java. The viewer shows `/Example/Counter`, `/Example/DirectCounter`, `/Example/Enabled`, and `/Example/Wasmbot`. `DirectCounter` uses a cached WPILib `DoublePublisher`, not `Telemetry`:
+
+```java
+private final DoublePublisher directCounter = NetworkTableInstance.getDefault()
+    .getDoubleTopic("/Example/DirectCounter").publish();
+```
+
+The WASM NetworkTables Java surface currently supports default-instance typed double publishers with no publisher options: `publish()`, `set(value)`, `set(value, timestampNanos)`, `setDefault(value)`, and `close()`/`unpublish()`. Other Java NT types, subscriptions, listeners, instance creation, and network client/server startup are not supported. Desktop/hardware builds still use the ordinary SDK implementation.
 
 ## JavaScript host and telemetry
 
-For a custom frontend, install `createWasmContinuations()` from `sim/continuations.js` as `globalThis.wasmContinuations` **before** `GraalVM.run()`. Install these functions before `wasmStart()`:
+All project-owned JavaScript hooks and exports live on the single global object `globalThis.wasmbot`; there are no standalone global aliases. GraalVM's `GraalVM` global and the browser's `document` remain unchanged. For a custom frontend, initialize the clock, driver-station hook, and JSPI continuation engine on this object **before** installing NetworkTables or importing the image, and therefore before `GraalVM.run()`:
 
-| Function                 | Contract                                                                                             |
-| ------------------------ | ---------------------------------------------------------------------------------------------------- |
-| `wasmNowNanos()`         | Monotonic simulated time, in nanoseconds.                                                            |
-| `wasmDs()`               | `{enabled, alliance, leftX, leftY, rightX}`; alliance is `"red"` or `"blue"`, axes are in `[-1, 1]`. |
-| `wasmNtGet(path)`        | Current host value, or `undefined`. The supplied viewer returns `undefined`.                         |
-| `wasmNtPut(path, value)` | Receives an ordinary JavaScript telemetry value.                                                     |
+```js
+import { createWasmContinuations } from "./sim/continuations.js";
+import { createNetworkTables } from "./sim/networktables.js";
 
-Advance the host clock by 20 ms per default tick and **await the `wasmTick()` Promise before starting another tick**. The supplied viewer serializes ticks and reports startup/runtime failures. JSPI requires neither `SharedArrayBuffer` nor cross-origin isolation.
+let nowNanos = 0;
+const ds = { enabled: false, alliance: "blue", leftX: 0, leftY: 0, rightX: 0 };
+globalThis.wasmbot = {
+  nowNanos: () => nowNanos,
+  driverStation: () => ds,
+  continuations: createWasmContinuations(),
+};
+const networkTables = createNetworkTables(globalThis.wasmbot.nowNanos);
+networkTables.install(); // adds nt, ntGet, and ntPut to globalThis.wasmbot
+```
 
-The wire format is unchanged: primitive scalars and arrays are native JS values; raw bytes, little-endian structs, and protobuf wire bytes are lowercase hex strings. Longs outside JS's safe-integer range are exact decimal strings, including in arrays. Timestamps and topic metadata are not transported.
+| Field on `globalThis.wasmbot` | Contract |
+| ---------------------------- | -------- |
+| `nowNanos()` | Monotonic simulated time, in nanoseconds. |
+| `driverStation()` | `{enabled, alliance, leftX, leftY, rightX}`; alliance is `"red"` or `"blue"`, axes are in `[-1, 1]`. |
+| `ntGet(path)` | Current host value, or `undefined` if no value exists. |
+| `ntPut(path, value, type?, timestampUs?)` | Publishes a JavaScript value; type defaults to inference and timestamp to the host clock. |
+| `nt` | Shared in-process topic transport installed by `networkTables.install()`. |
+| `continuations` | JSPI engine returned by `createWasmContinuations()`, installed by the host before the image runs. |
+| `start()` | Export installed by the image; starts the real Robot once, without resetting it on repeated calls. |
+| `tick()` | Export installed by the image; returns a Promise for one framework tick. |
+| `probe` | Smoke-image fixture exports, used by the native smoke harness. |
+
+After importing the image and awaiting `GraalVM.run()`, call `wasmbot.start()`. Advance the host clock by 20 ms per default tick and **await the `wasmbot.tick()` Promise before starting another tick**. The supplied viewer serializes ticks and reports startup/runtime failures. JSPI requires neither `SharedArrayBuffer` nor cross-origin isolation.
+
+Telemetry values retain their existing format: primitive scalars and arrays are native JS values; raw bytes, little-endian structs, and protobuf wire bytes are lowercase hex strings. Longs outside JS's safe-integer range are exact decimal strings, including in arrays. The host infers types for untyped telemetry values (numbers are `double`, empty arrays are `double[]`); telemetry's original type strings, properties, and log timestamps are not transported. Explicit NT publications carry their declared type, properties, and microsecond sample timestamps.
 
 The virtual HID on port zero exposes the three host axes through raw axes 0/1/2 and the standard Gamepad mapping/deadbands. Other controls are neutral and absent from availability masks; ports one through five are disconnected. The supplied host does not publish right-Y, triggers, buttons, POVs, or touchpads. Rumble and LED outputs are not emulated.
+
+### AdvantageScope-compatible NT4 client
+
+[`web/sim/NT4.ts`](web/sim/NT4.ts) is a self-contained replacement for AdvantageScope's `src/hub/dataSources/nt4/NT4.ts`. It exports `NT4_Client`, `NT4_Topic`, and all three `NT4_PORTS_*` constants, with the same constructor and public methods. Copy that file into the consuming frontend; existing imports and client construction can remain unchanged. This repository does not modify the sibling AdvantageScope checkout.
+
+The frontend and Wasm robot must share the same `globalThis.wasmbot.nt` host (and `wasmbot.nowNanos` clock). The supplied viewer and CLI harnesses install it automatically; a custom frontend uses the setup above. This is an in-process transport, not a WebSocket server: address, ports, and app name are accepted for API compatibility but do not select a remote endpoint. No MessagePack dependency is required.
+
+- `connect()` asynchronously connects to the installed host; `disconnect()` cancels pending delivery and removes that client's publishers. Reconnecting restores its subscriptions and publications.
+- Exact/prefix subscriptions replay cached samples; topics-only subscriptions announce without values. `sendAll` preserves samples within each delivery period; otherwise only the latest sample is delivered. Overlapping subscriptions merge without duplicate delivery, using the shortest requested period.
+- Topic announcements, removals, and property changes use the usual callbacks. Property values of `null` delete keys. Last-publisher removal deletes a topic unless retained or persistent. Both flags preserve topics only for this host's lifetime; there is no disk persistence.
+- Client publications write back through the same store read by `wasmbot.ntGet`. Conflicting publication types and older timestamps cannot overwrite current values. Values retain their local hook representation; the adapter does not reinterpret telemetry hex strings as NT binary payloads.
+- Server time uses the simulated clock in microseconds; client time uses epoch microseconds. Server time is `null` while disconnected; in-process network latency is zero. Java's explicit NT timestamps are nanoseconds and are converted at the bridge.
+
+Host transport methods are `snapshot()`, `listen(callback)` (returns an unsubscribe function), `publish(owner, name, type, properties)`, `unpublish(owner, name)`, `setProperties(name, update)`, and `put(owner, name, timestampUs, value)`. Listener events have `kind` (`announce`, `unannounce`, `properties`, or `value`) and `topic`; value events also have `timestamp` and `value`. `owner` identifies an individual publisher; clients must share the transport rather than wrap or overwrite the robot hooks.
+
+Run the deterministic adapter regression suite with:
+
+```sh
+bun test ./tools/wasm-debug/nt4.test.ts
+```
+
 
 ## Source isolation and extensions
 

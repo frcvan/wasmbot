@@ -8,30 +8,30 @@ import org.graalvm.webimage.api.JSValue;
 /**
  * JavaScript functions the Wasm image reads instead of DriverStation and NetworkTables JNI.
  *
- * <p>The host installs these on {@code globalThis} before calling {@code wasmStart}:
+ * <p>The host installs these on {@code globalThis.wasmbot} before calling {@code wasmbot.start}:
  *
  * <ul>
- *   <li>{@code wasmNowNanos(): number} monotonic time in nanoseconds
- *   <li>{@code wasmDs(): {enabled, alliance, leftX, leftY, rightX}} alliance is {@code "red"} or
+ *   <li>{@code nowNanos(): number} monotonic time in nanoseconds
+ *   <li>{@code driverStation(): {enabled, alliance, leftX, leftY, rightX}} alliance is {@code "red"} or
  *       {@code "blue"}
- *   <li>{@code wasmNtGet(path): any} current NetworkTables value, or {@code undefined}
- *   <li>{@code wasmNtPut(path, value)} publish a telemetry value
+ *   <li>{@code ntGet(path): any} current NetworkTables value, or {@code undefined}
+ *   <li>{@code ntPut(path, value)} publish a telemetry value
  * </ul>
  */
 public final class JsBridge {
   private JsBridge() {}
 
   /**
-   * @return monotonic time in nanoseconds from {@code wasmNowNanos}
+   * @return monotonic time in nanoseconds from {@code wasmbot.nowNanos}
    */
   @JS.Coerce
-  @JS("return globalThis.wasmNowNanos();")
+  @JS("return globalThis.wasmbot.nowNanos();")
   public static native double nowNanos();
 
   /**
-   * @return the current DriverStation snapshot from {@code wasmDs}
+   * @return the current DriverStation snapshot from {@code wasmbot.driverStation}
    */
-  @JS("return globalThis.wasmDs();")
+  @JS("return globalThis.wasmbot.driverStation();")
   public static native JSObject driverStation();
 
   /**
@@ -42,7 +42,7 @@ public final class JsBridge {
     return ntGet(JSString.of(path));
   }
 
-  @JS("return globalThis.wasmNtGet(path);")
+  @JS("return globalThis.wasmbot.ntGet(path);")
   private static native JSValue ntGet(JSString path);
 
   /**
@@ -52,22 +52,22 @@ public final class JsBridge {
    * @param value numeric value
    */
   @JS.Coerce
-  @JS("globalThis.wasmNtPut(path, value);")
+  @JS("globalThis.wasmbot.ntPut(path, value);")
   public static native void ntPut(String path, double value);
 
   /** Publishes a number without re-encoding a cached JavaScript topic string. */
   @JS.Coerce
-  @JS("globalThis.wasmNtPut(path, value);")
+  @JS("globalThis.wasmbot.ntPut(path, value);")
   static native void ntPut(JSString path, double value);
 
   /** Publishes one boolean telemetry value. */
   @JS.Coerce
-  @JS("globalThis.wasmNtPut(path, value);")
+  @JS("globalThis.wasmbot.ntPut(path, value);")
   static native void ntPut(JSString path, boolean value);
 
   /** Publishes one string telemetry value. */
   @JS.Coerce
-  @JS("globalThis.wasmNtPut(path, value);")
+  @JS("globalThis.wasmbot.ntPut(path, value);")
   static native void ntPut(JSString path, String value);
 
   /**
@@ -80,6 +80,6 @@ public final class JsBridge {
     ntPut(JSString.of(path), value);
   }
 
-  @JS("globalThis.wasmNtPut(path, value);")
+  @JS("globalThis.wasmbot.ntPut(path, value);")
   static native void ntPut(JSString path, JSValue value);
 }

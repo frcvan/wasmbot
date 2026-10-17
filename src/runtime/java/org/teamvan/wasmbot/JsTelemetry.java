@@ -19,7 +19,7 @@ import us.hebi.quickbuf.ProtoMessage;
 import us.hebi.quickbuf.ProtoSink;
 
 /**
- * Sends telemetry values to {@code wasmNtPut}. Arrays are JavaScript arrays; raw, struct, and
+ * Sends telemetry values to {@code wasmbot.ntPut}. Arrays are JavaScript arrays; raw, struct, and
  * protobuf payloads are lowercase hex strings. Longs outside JavaScript's safe integer range are
  * decimal strings instead of rounded numbers. The host API carries neither timestamps nor metadata.
  */
