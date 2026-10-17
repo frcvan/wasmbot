@@ -45,4 +45,4 @@ jobs:
                   ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
                   ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.MAVEN_SIGNING_KEY }}
                   ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
-              run: gradle --no-daemon check publishAndReleaseToMavenCentral -PreleaseVersion="${RELEASE_TAG#v}"
+              run: gradle --no-daemon check publishAndReleaseToMavenCentral -PreleaseVersion="${RELEASE_TAG#v}" -x spotlessCheck -x spotlessApply

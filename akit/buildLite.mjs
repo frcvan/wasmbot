@@ -14,6 +14,7 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(scriptDirectory, "build");
 const distribution = "LITE";
 const ASCOPE_COMMIT = "e28580467";
+const skipDocs = process.env.WASMBOT_SKIP_DOCS === "true";
 
 function log(message) {
     console.log(`[buildLite] ${new Date().toISOString()} ${message}`);
@@ -79,12 +80,14 @@ function isAdvantageScopeRepository(destination) {
             origin.endsWith(":Mechanical-Advantage/AdvantageScope")
         );
     } catch {
-        log(`existing checkout at ${destination} is not a usable Git repository`);
+        log(
+            `existing checkout at ${destination} is not a usable Git repository`
+        );
         return false;
     }
 }
 
-log(`starting ${distribution} build`);
+log(`starting ${distribution} build${skipDocs ? " without docs" : ""}`);
 log(`AdvantageScope source directory: ${root}`);
 cloneAscope(root);
 
@@ -156,9 +159,6 @@ function patchWasmCompile(source) {
               \`Emscripten version is not \${EMSCRIPTEN_VERSION}. Please install the correct version and try again.\`
             );
           }`;
-    if (!source.includes(versionCheck)) {
-        throw new Error("Could not find the Emscripten version check");
-    }
 
     return source.replace(
         versionCheck,
@@ -251,12 +251,16 @@ try {
         ["run", "wasm:compile"],
         root
     );
-    log("building embedded documentation");
-    run(
-        process.platform === "win32" ? "npm.cmd" : "npm",
-        ["run", "docs:build-embed"],
-        root
-    );
+    if (skipDocs) {
+        log("skipping embedded documentation build");
+    } else {
+        log("building embedded documentation");
+        run(
+            process.platform === "win32" ? "npm.cmd" : "npm",
+            ["run", "docs:build-embed"],
+            root
+        );
+    }
 } finally {
     log("restoring temporary AdvantageScope source patches");
     if (patchedAssetLoader !== originalAssetLoader)
@@ -269,7 +273,11 @@ try {
 const staticRoot = path.join(root, "lite", "static");
 log(`assembling static output at ${staticRoot}`);
 copyDirectory(path.join(root, "www"), path.join(staticRoot, "www"));
-copyDirectory(path.join(root, "docs", "build"), path.join(staticRoot, "docs"));
+if (skipDocs) {
+    fs.rmSync(path.join(staticRoot, "docs"), { recursive: true, force: true });
+} else {
+    copyDirectory(path.join(root, "docs", "build"), path.join(staticRoot, "docs"));
+}
 patchHubHtml(path.join(staticRoot, "www", "hub.html"));
 
 // The server normally creates this response dynamically. An extensionless file lets

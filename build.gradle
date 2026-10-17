@@ -83,11 +83,16 @@ publishing.publications.withType(MavenPublication).configureEach {
 // the consuming robot compiles them against its own WPILib and vendor versions.
 def buildLite = tasks.register('buildLite', Exec) {
     group = 'WASM'
-    description = 'Builds the bundled AdvantageScope Lite frontend.'
+    description = 'Builds the bundled AdvantageScope Lite frontend. Use -PskipDocs=true to omit docs.'
     workingDir(projectDir)
     commandLine('node', 'akit/buildLite.mjs')
     inputs.file(layout.projectDirectory.file('akit/buildLite.mjs'))
     inputs.file(layout.projectDirectory.file('akit/NT4.ts'))
+    def skipDocs = providers.gradleProperty('skipDocs').map { it.toBoolean() }.orElse(false)
+    inputs.property('skipDocs', skipDocs)
+    doFirst {
+        environment('WASMBOT_SKIP_DOCS', skipDocs.get().toString())
+    }
     outputs.dir('akit/build/lite/static')
 }
 
