@@ -5,6 +5,7 @@ import java.util.function.LongSupplier;
 import org.graalvm.webimage.api.JS;
 import org.graalvm.webimage.api.JSObject;
 import org.wpilib.driverstation.Alliance;
+import org.wpilib.hardware.hal.RobotMode;
 
 /**
  * Java-side copy of the values JavaScript supplies each loop. WPILib facades read this instead of
@@ -14,6 +15,7 @@ public final class WasmRuntime {
   private static final double BATTERY_VOLTS = 12.0;
 
   private static volatile boolean enabled;
+  private static volatile RobotMode robotMode = RobotMode.UNKNOWN;
   private static volatile boolean dsAttached;
   private static volatile Alliance alliance = Alliance.BLUE;
   private static final int CONTROLLER_PORTS = 6;
@@ -35,6 +37,7 @@ public final class WasmRuntime {
   public static void refresh() {
     JSObject ds = JsBridge.driverStation();
     setEnabled(enabled(ds));
+    setRobotMode(RobotMode.fromInt(robotMode(ds)));
     setAlliance(redAlliance(ds) ? Alliance.RED : Alliance.BLUE);
     boolean hasControllers = hasControllers(ds);
     for (int port = 0; port < CONTROLLER_PORTS; port++) {
@@ -80,6 +83,16 @@ public final class WasmRuntime {
    */
   public static void setEnabled(boolean enabled) {
     WasmRuntime.enabled = enabled;
+  }
+
+  /** Sets the selected robot mode independently of the enabled flag. */
+  public static void setRobotMode(RobotMode robotMode) {
+    WasmRuntime.robotMode = robotMode;
+  }
+
+  /** Returns the selected mode, including UNKNOWN when the host omits it. */
+  public static RobotMode getRobotMode() {
+    return robotMode;
   }
 
   /**
@@ -216,6 +229,11 @@ public final class WasmRuntime {
   @JS.Coerce
   @JS("return ds.enabled === true;")
   private static native boolean enabled(JSObject ds);
+
+  @JS.Coerce
+  @JS(
+      "switch (ds.mode) { case 'autonomous': return 1; case 'teleop': return 2; case 'utility': return 3; default: return 0; }")
+  private static native int robotMode(JSObject ds);
 
   @JS.Coerce
   @JS("return typeof ds.alliance === 'string' && ds.alliance.toLowerCase() === 'red';")

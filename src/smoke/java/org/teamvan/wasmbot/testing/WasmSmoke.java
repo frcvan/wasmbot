@@ -41,6 +41,7 @@ public final class WasmSmoke {
     }
     checkDynamics();
     FrameworkSmoke.run();
+    ModeSmoke.run();
     WatchdogSmoke.run();
     NetworkTablesSmoke.run();
     ControllerSmoke.run();
@@ -49,7 +50,7 @@ public final class WasmSmoke {
     backend.getEntry("/Review/Number").logDouble(1.25, 0);
     var text = backend.getEntry("/Review/String");
     text.logString("hello", "string", 0);
-    text.setProperty("unit", "m");
+    text.setProperty("unit", "\"m\"");
     backend.getEntry("/Review/Booleans").logBooleanArray(new boolean[] {true, false}, 0);
     backend.getEntry("/Review/Shorts").logShortArray(new short[] {-3, 7}, 0);
     backend.getEntry("/Review/Ints").logIntArray(new int[] {-100000, 200000}, 0);
@@ -207,6 +208,12 @@ public final class WasmSmoke {
       near(sim.getAngularVelocity(), 6 * (1 - Math.exp(-2 * time)));
       near(sim.getAngularPosition(), 6 * (time - (1 - Math.exp(-2 * time)) / 2));
     }
+    sim.setState(-0.75, 0.0);
+    near(sim.getAngularPosition(), -0.75);
+    near(sim.getAngularVelocity(), 0.0);
+    sim.update(0.02);
+    near(sim.getAngularVelocity(), 6 * (1 - Math.exp(-0.04)));
+    near(sim.getAngularPosition(), -0.75 + 6 * (0.02 - (1 - Math.exp(-0.04)) / 2));
     var clamped = new DCMotorSim(plant, DCMotor.getKrakenX60Foc(1));
     clamped.setInputVoltage(100);
     clamped.update(0.02);

@@ -3,7 +3,9 @@ package org.teamvan.wasmbot.testing;
 import org.graalvm.webimage.api.JS;
 import org.wpilib.driverstation.DriverStation;
 import org.wpilib.driverstation.Gamepad;
+import org.wpilib.driverstation.NiDsXboxController;
 import org.wpilib.driverstation.POVDirection;
+import org.wpilib.event.EventLoop;
 
 /** Assertions against controller snapshots supplied by the real WASM smoke host. */
 final class ControllerSmoke {
@@ -150,6 +152,35 @@ final class ControllerSmoke {
           primary.getFaceDownButtonPressed() && !primary.getFaceDownButtonPressed(),
           "reconnect creates a new press");
       require(!hid.getRawButton(25), "old high buttons do not survive reconnect");
+    } else if (phase == 7) {
+      var ni = new NiDsXboxController(0);
+      var secondNi = new NiDsXboxController(1);
+      near(ni.getLeftX(), 0.2);
+      near(ni.getLeftY(), -0.3);
+      near(ni.getRightX(), 0.4);
+      near(ni.getRightY(), -0.5);
+      near(ni.getLeftTriggerAxis(), 0.6);
+      near(ni.getRightTriggerAxis(), 0.7);
+      near(secondNi.getRightX(), -1);
+      near(secondNi.getRightY(), 1);
+      near(secondNi.getLeftTriggerAxis(), 0.25);
+      near(secondNi.getRightTriggerAxis(), 0.75);
+      require(ni.getLeftBumperButton() && !ni.getRightBumperButton(), "NI left bumper mapping");
+      require(ni.getBackButton() && !ni.getStartButton(), "NI back mapping");
+      require(ni.getLeftStickButton() && !ni.getRightStickButton(), "NI left stick mapping");
+      require(secondNi.getRightBumperButton() && !secondNi.getLeftBumperButton(), "NI right bumper mapping");
+      require(secondNi.getStartButton() && !secondNi.getBackButton(), "NI start mapping");
+      require(secondNi.getRightStickButton() && !secondNi.getLeftStickButton(), "NI right stick mapping");
+      EventLoop loop = new EventLoop();
+      var leftTrigger = ni.leftTrigger(0.65, loop);
+      var rightTrigger = ni.rightTrigger(0.65, loop);
+      var bumper = ni.leftBumper(loop);
+      loop.poll();
+      require(!leftTrigger.getAsBoolean() && rightTrigger.getAsBoolean(), "NI trigger events");
+      require(bumper.getAsBoolean(), "NI bumper event");
+      near(primary.getAxis(Gamepad.Axis.RIGHT_X), 0.4);
+      near(primary.getAxis(Gamepad.Axis.LEFT_TRIGGER), 0.6);
+      require(primary.getBackButton(), "NI construction must not remap Gamepad buttons");
     } else {
       throw new AssertionError("Unknown controller smoke phase " + phase);
     }

@@ -64,11 +64,10 @@ type HostEvent = {
 };
 
 function normalizeHostValue(type: string, value: unknown): unknown {
-    // StructPublisher sends packed bytes as hex because Graal's JS bridge only accepts
-    // JSString reliably for this call. NT4 exposes struct samples as raw byte arrays.
-    // FIXME: make graalvm JS bridge accept Uint8Array and remove this hack.
+    // Java's bridge carries packed binary samples as hex strings. NT4 consumers receive
+    // bytes for every raw-backed declared type, including structs and schema descriptors.
     if (
-        type.startsWith("struct:") &&
+        (typeIndices[type] ?? 5) === 5 &&
         typeof value === "string" &&
         value.length % 2 === 0 &&
         /^[0-9a-fA-F]*$/.test(value)

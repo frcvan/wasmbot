@@ -14,7 +14,7 @@ export function createNetworkTables(nowNanos) {
   function publish(owner, name, type, properties = {}) {
     let topic = topics.get(name);
     if (!topic) {
-      topic = { uid: nextId++, name, type, properties: { ...properties }, publishers: new Map(), timestamp: 0, value: undefined };
+      topic = { uid: nextId++, name, type, properties: { ...properties }, publishers: new Map(), timestamp: 0, value: undefined, revision: 0, lastPublisher: null };
       topics.set(name, topic);
       topic.publishers.set(owner, type);
       emit({ kind: "announce", topic });
@@ -34,11 +34,14 @@ export function createNetworkTables(nowNanos) {
     if (timestamp < topic.timestamp) return false;
     topic.timestamp = timestamp;
     topic.value = Array.isArray(value) || value instanceof Uint8Array ? value.slice() : value;
+    topic.revision++;
+    topic.lastPublisher = owner;
     emit({ kind: "value", topic, timestamp, value: topic.value });
     return true;
   }
   const transport = {
     snapshot: () => [...topics.values()],
+    getTopic: (name) => topics.get(name),
     listen(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);

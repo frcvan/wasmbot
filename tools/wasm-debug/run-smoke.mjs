@@ -95,10 +95,10 @@ const expected = {
         "9223372036854775807"
     ],
     Raw: "00ff10",
-    EmptyStructs: []
+    EmptyStructs: ""
 };
 for (const [key, value] of Object.entries(expected)) {
-    assert.deepEqual(values[`/Review/${key}`], value, key);
+    assert.deepEqual(values[`/Telemetry/Review/${key}`], value, key);
 }
 function struct(x, y, rotation) {
     const bytes = Buffer.alloc(24);
@@ -107,11 +107,8 @@ function struct(x, y, rotation) {
     bytes.writeDoubleLE(rotation, 16);
     return bytes.toString("hex");
 }
-assert.equal(values["/Review/Struct"], struct(3, 4, -1));
-assert.deepEqual(values["/Review/Structs"], [
-    struct(1.25, -2.5, 0.5),
-    struct(3, 4, -1)
-]);
+assert.equal(values["/Telemetry/Review/Struct"], struct(3, 4, -1));
+assert.equal(values["/Telemetry/Review/Structs"], struct(1.25, -2.5, 0.5) + struct(3, 4, -1));
 function field(tag, value) {
     const bytes = Buffer.alloc(9);
     bytes[0] = tag;
@@ -126,7 +123,7 @@ const protobuf = Buffer.concat([
     Buffer.from([18, rotation.length]),
     rotation
 ]);
-assert.equal(values["/Review/Proto"], protobuf.toString("hex"));
+assert.equal(values["/Telemetry/Review/Proto"], protobuf.toString("hex"));
 const currentStructEvents = ntEvents.filter(
     (event) => event.name === "/Review/NTStructCurrent"
 );
@@ -165,6 +162,8 @@ assert.deepEqual(
     "nanoseconds must convert to microseconds; stale/closed writes must drop, peers survive, reopening resets data"
 );
 const ntSnapshot = networkTables.snapshot();
+assert.equal(ntSnapshot.find(topic => topic.name === "/Telemetry/Review/String")?.properties.unit, "m");
+assert.equal(ntSnapshot.find(topic => topic.name === "/Telemetry/Review/Structs")?.type, "struct:Pose2d[]");
 assert.ok(
     !ntSnapshot.some((topic) => topic.name.startsWith("/Review/NTStruct")),
     "closing the last struct publisher must unannounce its topic"
@@ -198,37 +197,37 @@ let attemptedTicks = 0;
 let completedTicks = 0;
 function assertLifecycle() {
     assert.equal(
-        values["/Review/WasmbotInConstructor"],
+        values["/Telemetry/Review/WasmbotInConstructor"],
         true,
         "wasmbot property must be true in the constructor"
     );
     assert.equal(
-        values["/Review/RobotInstances"],
+        values["/Telemetry/Review/RobotInstances"],
         1,
         "Robot must be constructed exactly once"
     );
     assert.equal(
-        values["/Review/SimulationInitCalls"],
+        values["/Telemetry/Review/SimulationInitCalls"],
         1,
         "simulationInit must run exactly once"
     );
     assert.equal(
-        values["/Review/RobotPeriodicTicks"],
+        values["/Telemetry/Review/RobotPeriodicTicks"],
         attemptedTicks,
         "every tick must call robotPeriodic"
     );
     assert.equal(
-        values["/Review/SchedulerTicks"],
+        values["/Telemetry/Review/SchedulerTicks"],
         attemptedTicks,
         "robotPeriodic must own exactly one Scheduler.run"
     );
     assert.equal(
-        values["/Review/CompletedPeriodicTicks"],
+        values["/Telemetry/Review/CompletedPeriodicTicks"],
         completedTicks,
         "only successful scheduler ticks reach the end of robotPeriodic"
     );
     assert.equal(
-        values["/Review/SimulationPeriodicTicks"],
+        values["/Telemetry/Review/SimulationPeriodicTicks"],
         completedTicks,
         "simulationPeriodic follows successful robotPeriodic calls"
     );
@@ -283,6 +282,13 @@ globalThis.wasmbot.checkControllers(5);
 delete ds.controllers;
 await tick();
 globalThis.wasmbot.checkControllers(6);
+ds.controllers = [
+    { name: "NI primary", axes: [0.2, -0.3, 0.4, -0.5, 0.6, 0.7], buttons: controllerButtons(9, 4, 7) },
+    { name: "NI secondary", axes: [-0.8, 0.9, -1, 1, 0.25, 0.75], buttons: controllerButtons(10, 6, 8) }
+];
+await tick();
+globalThis.wasmbot.checkControllers(7);
+delete ds.controllers;
 ds.leftX = 0;
 ds.leftY = 0;
 ds.rightX = 0;

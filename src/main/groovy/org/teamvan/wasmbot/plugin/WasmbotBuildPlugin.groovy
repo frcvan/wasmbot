@@ -53,6 +53,11 @@ class WasmbotBuildPlugin implements Plugin<Project> {
         project.tasks.named(runtime.compileJavaTaskName) { dependsOn(prepare) }
         project.tasks.named(runtime.processResourcesTaskName) { dependsOn(prepare) }
         project.tasks.named(smoke.compileJavaTaskName) { dependsOn(prepare) }
+        project.tasks.named(wasm.processResourcesTaskName) {
+            from(project.layout.projectDirectory.dir('src/main/deploy')) {
+                into 'wasmbot/deploy'
+            }
+        }
         project.tasks.withType(JavaCompile).configureEach {
             options.compilerArgs.addAll(['-parameters', '-XDstringConcat=inline'])
         }

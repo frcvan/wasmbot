@@ -24,6 +24,7 @@ const pads = Array.from({ length: PORT_COUNT }, () => ({
 }));
 const driverStation = {
     enabled: false,
+    mode: "unknown",
     alliance: "blue",
     controllers: Array(PORT_COUNT).fill(null)
 };
@@ -48,6 +49,15 @@ enable.type = "checkbox";
 enable.disabled = true;
 enableLabel.append(enable, " Enable robot ");
 panel.append(enableLabel);
+const mode = document.createElement("select");
+mode.setAttribute("aria-label", "Robot mode");
+for (const value of ["unknown", "teleop", "autonomous", "utility"]) {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = `${value} mode`;
+    mode.append(option);
+}
+panel.append(mode);
 const alliance = document.createElement("select");
 alliance.setAttribute("aria-label", "Robot alliance");
 for (const color of ["blue", "red"]) {
@@ -61,7 +71,7 @@ const inputStatus = document.createElement("div");
 panel.append(inputStatus);
 const help = document.createElement("p");
 help.style.marginBottom = "0";
-help.textContent = "Connect a standard browser gamepad (ports 0–5), or use keyboard on port 0: W/S left Y, A/D left X, Q/E right X, R/F right Y, Z/C triggers. J/K/U/I face buttons, 1/3 bumpers, B/Enter back/start, Home guide, V/N stick clicks, arrows D-pad. Shift selects red alliance. Blur or hiding this page disables the robot. Click outside text fields to drive.";
+help.textContent = "Select a robot mode, then enable. Connect a standard browser gamepad (ports 0–5), or use keyboard on port 0: W/S left Y, A/D left X, Q/E right X, R/F right Y, Z/C triggers. J/K/U/I face buttons, 1/3 bumpers, B/Enter back/start, Home guide, V/N stick clicks, arrows D-pad. Shift selects red alliance. Blur or hiding this page disables the robot without changing the selected mode. Click outside text fields to drive.";
 panel.append(help);
 document.body.append(panel);
 enable.addEventListener("change", () => {
@@ -112,6 +122,7 @@ function readDriverStation() {
         keyboard.buttons[i] = keys.has(keyboardButtons[i]);
     }
     driverStation.alliance = keys.has("shift") ? "red" : alliance.value;
+    driverStation.mode = mode.value;
     driverStation.controllers.fill(null);
     let names = "";
     const gamepads = navigator.getGamepads?.() ?? [];

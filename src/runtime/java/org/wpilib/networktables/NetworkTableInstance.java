@@ -1,9 +1,11 @@
 package org.wpilib.networktables;
 
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import org.wpilib.util.protobuf.Protobuf;
 import org.wpilib.util.struct.Struct;
 
 /**
@@ -15,6 +17,8 @@ public final class NetworkTableInstance implements AutoCloseable {
   private static final NetworkTableInstance DEFAULT = new NetworkTableInstance();
   private final Map<String, Topic> topics = new HashMap<>();
   private final Map<String, DoubleTopic> doubles = new HashMap<>();
+  private final Map<String, IntegerTopic> integers = new HashMap<>();
+  private final Map<String, NetworkTable> tables = new HashMap<>();
   private final Map<String, StructTopic<?>> structs = new HashMap<>();
   private final Set<String> schemas = new HashSet<>();
 
@@ -31,6 +35,13 @@ public final class NetworkTableInstance implements AutoCloseable {
   public boolean isValid() {
     return true;
   }
+  public NetworkTable getTable(String key) {
+    String normalized = NetworkTable.normalizeKey(key);
+    if (normalized.equals("/")) normalized = "";
+    else if (normalized.endsWith("/")) normalized = normalized.substring(0, normalized.length() - 1);
+    return tables.computeIfAbsent(normalized, name -> new NetworkTable(this, name));
+  }
+
 
   public Topic getTopic(String name) {
     return topics.computeIfAbsent(
@@ -40,6 +51,10 @@ public final class NetworkTableInstance implements AutoCloseable {
   public DoubleTopic getDoubleTopic(String name) {
     return doubles.computeIfAbsent(name, key -> new DoubleTopic(getTopic(key)));
   }
+  public IntegerTopic getIntegerTopic(String name) {
+    return integers.computeIfAbsent(name, key -> new IntegerTopic(getTopic(key)));
+  }
+
 
   public <T> StructTopic<T> getStructTopic(String name, Struct<T> struct) {
     @SuppressWarnings("unchecked")
@@ -61,6 +76,23 @@ public final class NetworkTableInstance implements AutoCloseable {
       addSchema(nested);
     }
   }
+  public boolean hasSchema(String name) {
+    return schemas.contains(name);
+  }
+
+  public void addSchema(String name, String type, String schema) {
+    addSchema(name, type, schema.getBytes(StandardCharsets.UTF_8));
+  }
+
+  public void addSchema(String name, String type, byte[] schema) {
+    if (schemas.add(name)) NetworkTablesJNI.addSchema(name, type, schema);
+  }
+
+  public void addSchema(Protobuf<?, ?> proto) {
+    proto.forEachDescriptor(this::hasSchema,
+        (name, schema) -> addSchema(name, "proto:FileDescriptor", schema));
+  }
+
 
   /** The default instance is process-owned, as in the SDK. Close publishers to release topics. */
   @Override

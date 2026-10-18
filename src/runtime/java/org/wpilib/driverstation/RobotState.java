@@ -3,7 +3,7 @@ package org.wpilib.driverstation;
 import org.teamvan.wasmbot.WasmRuntime;
 import org.wpilib.hardware.hal.RobotMode;
 
-/** Wasm stand-in. Enable state comes from JavaScript, not HAL. */
+/** Wasm stand-in. Enable state and selected robot mode come from JavaScript, not HAL. */
 public final class RobotState {
   private RobotState() {}
 
@@ -50,52 +50,52 @@ public final class RobotState {
   }
 
   /**
-   * @return unknown; the browser does not select a robot mode
+   * @return the selected host mode, independently of whether the robot is enabled
    */
   public static RobotMode getRobotMode() {
-    return RobotMode.UNKNOWN;
+    return WasmRuntime.getRobotMode();
   }
 
   /**
-   * @return false; no autonomous mode is selected
+   * @return whether autonomous mode is selected, including while disabled
    */
   public static boolean isAutonomous() {
-    return false;
+    return getRobotMode() == RobotMode.AUTONOMOUS;
   }
 
   /**
-   * @return false; no autonomous mode is selected
+   * @return whether autonomous mode is selected and the attached host enables the robot
    */
   public static boolean isAutonomousEnabled() {
-    return false;
+    return isAutonomous() && isEnabled() && isDSAttached();
   }
 
   /**
-   * @return false; no teleoperated mode is selected
+   * @return whether teleoperated mode is selected, including while disabled
    */
   public static boolean isTeleop() {
-    return false;
+    return getRobotMode() == RobotMode.TELEOPERATED;
   }
 
   /**
-   * @return false; no teleoperated mode is selected
+   * @return whether teleoperated mode is selected and the attached host enables the robot
    */
   public static boolean isTeleopEnabled() {
-    return false;
+    return isTeleop() && isEnabled() && isDSAttached();
   }
 
   /**
-   * @return false; no utility mode is selected
+   * @return whether utility mode is selected, including while disabled
    */
   public static boolean isUtility() {
-    return false;
+    return getRobotMode() == RobotMode.UTILITY;
   }
 
   /**
-   * @return false; no utility mode is selected
+   * @return whether utility mode is selected and the attached host enables the robot
    */
   public static boolean isUtilityEnabled() {
-    return false;
+    return isUtility() && isEnabled() && isDSAttached();
   }
 
   /**

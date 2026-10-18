@@ -78,6 +78,21 @@ public class DCMotorSim extends LinearSystemSim<N2, N1, N2> {
     }
   }
 
+  /** Sets position and velocity and immediately recomputes the plant output. */
+  public void setState(double angularPosition, double angularVelocity) {
+    m_x.set(0, 0, angularPosition);
+    m_x.set(1, 0, angularVelocity);
+    double input = m_u.get(0, 0);
+    for (int row = 0; row < 2; row++) {
+      m_y.set(
+          row,
+          0,
+          m_plant.getC(row, 0) * angularPosition
+              + m_plant.getC(row, 1) * angularVelocity
+              + m_plant.getD(row, 0) * input);
+    }
+  }
+
   /**
    * @return output position in radians
    */

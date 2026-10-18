@@ -91,6 +91,7 @@ public final class WasmApplication {
     try {
       System.setProperty("wasmbot", "true");
       JsTelemetry.install();
+      JsTunables.install();
       WasmRuntime.refresh();
       robot = Objects.requireNonNull(factory.get(), "Robot constructor returned null");
       robot.startCompetition();

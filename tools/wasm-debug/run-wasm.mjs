@@ -32,7 +32,7 @@ globalThis.document = {
 
 let nowNanos = 0;
 const telemetry = new Map();
-const ds = { enabled: false, alliance: "blue", leftX: 0, leftY: 0, rightX: 0 };
+const ds = { enabled: false, mode: "teleop", alliance: "blue", leftX: 0, leftY: 0, rightX: 0 };
 globalThis.wasmbot = {
     nowNanos: () => nowNanos,
     driverStation: () => ds,
