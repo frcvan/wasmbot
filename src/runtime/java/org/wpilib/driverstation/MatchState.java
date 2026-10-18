@@ -13,4 +13,14 @@ public final class MatchState {
   public static Optional<Alliance> getAlliance() {
     return WasmRuntime.getAlliance();
   }
+
+  /** No FMS or practice clock is supplied by this host; -1 is the SDK unavailable sentinel. */
+  public static double getMatchTime() {
+    return -1.0;
+  }
+
+  /** This simulator has no FMS game-specific message. */
+  public static Optional<String> getGameData() {
+    return Optional.empty();
+  }
 }

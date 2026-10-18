@@ -69,9 +69,13 @@ public final class JsTunables implements TunableBackend {
     }
     TunableConfig config = tunable.getConfig();
     String type = config != null && config.getTypeString() != null ? config.getTypeString() : kind;
-    JSObject state = createState(JSString.of("/Tunables" + path), JSString.of(type),
-        JSString.of(tunable.getProperties()), tunable.isRobust(),
-        config == null || config.isMutable());
+    JSObject state =
+        createState(
+            JSString.of("/Tunables" + path),
+            JSString.of(type),
+            JSString.of(tunable.getProperties()),
+            tunable.isRobust(),
+            config == null || config.isMutable());
     Stored stored = new Stored(path, tunable, null, kind, state);
     try {
       publishValue(stored);
@@ -96,8 +100,13 @@ public final class JsTunables implements TunableBackend {
     JSObject state = null;
     String type = tunable.getTunableType();
     if (type != null) {
-      state = createState(JSString.of("/Tunables" + path + "/.type"), JSString.of("string"),
-          JSString.of("{}"), false, false);
+      state =
+          createState(
+              JSString.of("/Tunables" + path + "/.type"),
+              JSString.of("string"),
+              JSString.of("{}"),
+              false,
+              false);
       putString(state, JSString.of(type));
     }
     entries.put(path, new Stored(path, null, tunable, null, state));
@@ -163,7 +172,9 @@ public final class JsTunables implements TunableBackend {
         boolean tuned = stored.mutable && takeInput(stored.state);
         if (tuned) applyInput(stored);
         TunableConfig config = stored.tunable.getConfig();
-        if (tuned || stored.dirty || stored.tunable.hasChanged()
+        if (tuned
+            || stored.dirty
+            || stored.tunable.hasChanged()
             || config != null && config.isAlwaysGet()
             || !stored.tunable.supportsChangeNotification()) {
           publishValue(stored);
@@ -236,38 +247,44 @@ public final class JsTunables implements TunableBackend {
   }
 
   @JS.Coerce
-  @JS("const properties = JSON.parse(json); properties.mutable = mutable;"
-      + " if (robust) properties.robust = true;"
-      + " const state = {owner: {}, output: path + (robust ? '/value' : ''),"
-      + " input: path + (robust ? '/tune' : ''), type, topic: null, revision: -1};"
-      + " globalThis.wasmbot.nt.publish(state.owner, state.output, type, properties); return state;")
+  @JS(
+      "const properties = JSON.parse(json); properties.mutable = mutable;"
+          + " if (robust) properties.robust = true;"
+          + " const state = {owner: {}, output: path + (robust ? '/value' : ''),"
+          + " input: path + (robust ? '/tune' : ''), type, topic: null, revision: -1};"
+          + " globalThis.wasmbot.nt.publish(state.owner, state.output, type, properties); return state;")
   private static native JSObject createState(
       JSString path, JSString type, JSString json, boolean robust, boolean mutable);
 
   @JS.Coerce
-  @JS("const topic = globalThis.wasmbot.nt.getTopic(state.input);"
-      + " if (!topic || topic.type !== state.type || topic.value === undefined) return false;"
-      + " if (state.topic === topic && state.revision === topic.revision) return false;"
-      + " state.topic = topic; state.revision = topic.revision;"
-      + " if (topic.lastPublisher === state.owner) return false;"
-      + " state.value = topic.value; return true;")
+  @JS(
+      "const topic = globalThis.wasmbot.nt.getTopic(state.input);"
+          + " if (!topic || topic.type !== state.type || topic.value === undefined) return false;"
+          + " if (state.topic === topic && state.revision === topic.revision) return false;"
+          + " state.topic = topic; state.revision = topic.revision;"
+          + " if (topic.lastPublisher === state.owner) return false;"
+          + " state.value = topic.value; return true;")
   private static native boolean takeInput(JSObject state);
 
   @JS("globalThis.wasmbot.nt.unpublish(state.owner, state.output);")
   private static native void closeState(JSObject state);
 
   @JS.Coerce
-  @JS("globalThis.wasmbot.nt.put(state.owner, state.output, globalThis.wasmbot.nowNanos() / 1000, value);")
+  @JS(
+      "globalThis.wasmbot.nt.put(state.owner, state.output, globalThis.wasmbot.nowNanos() / 1000, value);")
   private static native void putBoolean(JSObject state, boolean value);
 
   @JS.Coerce
-  @JS("globalThis.wasmbot.nt.put(state.owner, state.output, globalThis.wasmbot.nowNanos() / 1000, value);")
+  @JS(
+      "globalThis.wasmbot.nt.put(state.owner, state.output, globalThis.wasmbot.nowNanos() / 1000, value);")
   private static native void putNumber(JSObject state, double value);
 
-  @JS("globalThis.wasmbot.nt.put(state.owner, state.output, globalThis.wasmbot.nowNanos() / 1000, value);")
+  @JS(
+      "globalThis.wasmbot.nt.put(state.owner, state.output, globalThis.wasmbot.nowNanos() / 1000, value);")
   private static native void putString(JSObject state, JSString value);
 
-  @JS("globalThis.wasmbot.nt.put(state.owner, state.output, globalThis.wasmbot.nowNanos() / 1000, value);")
+  @JS(
+      "globalThis.wasmbot.nt.put(state.owner, state.output, globalThis.wasmbot.nowNanos() / 1000, value);")
   private static native void putArray(JSObject state, JSObject value);
 
   @JS.Coerce

@@ -173,8 +173,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
   }
 
   /**
-   * Get the left trigger axis value of the controller. Note that this axis is bound to the
-   * range of [0, 1] as opposed to the usual [-1, 1].
+   * Get the left trigger axis value of the controller. Note that this axis is bound to the range of
+   * [0, 1] as opposed to the usual [-1, 1].
    *
    * @return The axis value.
    */
@@ -209,8 +209,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
   }
 
   /**
-   * Get the right trigger axis value of the controller. Note that this axis is bound to the
-   * range of [0, 1] as opposed to the usual [-1, 1].
+   * Get the right trigger axis value of the controller. Note that this axis is bound to the range
+   * of [0, 1] as opposed to the usual [-1, 1].
    *
    * @return The axis value.
    */
@@ -275,8 +275,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
    * Constructs an event instance around the A button's digital signal.
    *
    * @param loop the event loop instance to attach the event to.
-   * @return an event instance representing the A button's digital signal
-   *     attached to the given loop.
+   * @return an event instance representing the A button's digital signal attached to the given
+   *     loop.
    */
   public BooleanEvent a(EventLoop loop) {
     return m_hid.button(Gamepad.Button.FACE_DOWN.value, loop);
@@ -313,8 +313,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
    * Constructs an event instance around the B button's digital signal.
    *
    * @param loop the event loop instance to attach the event to.
-   * @return an event instance representing the B button's digital signal
-   *     attached to the given loop.
+   * @return an event instance representing the B button's digital signal attached to the given
+   *     loop.
    */
   public BooleanEvent b(EventLoop loop) {
     return m_hid.button(Gamepad.Button.FACE_RIGHT.value, loop);
@@ -351,8 +351,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
    * Constructs an event instance around the X button's digital signal.
    *
    * @param loop the event loop instance to attach the event to.
-   * @return an event instance representing the X button's digital signal
-   *     attached to the given loop.
+   * @return an event instance representing the X button's digital signal attached to the given
+   *     loop.
    */
   public BooleanEvent x(EventLoop loop) {
     return m_hid.button(Gamepad.Button.FACE_LEFT.value, loop);
@@ -389,8 +389,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
    * Constructs an event instance around the Y button's digital signal.
    *
    * @param loop the event loop instance to attach the event to.
-   * @return an event instance representing the Y button's digital signal
-   *     attached to the given loop.
+   * @return an event instance representing the Y button's digital signal attached to the given
+   *     loop.
    */
   public BooleanEvent y(EventLoop loop) {
     return m_hid.button(Gamepad.Button.FACE_UP.value, loop);
@@ -427,8 +427,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
    * Constructs an event instance around the left bumper button's digital signal.
    *
    * @param loop the event loop instance to attach the event to.
-   * @return an event instance representing the left bumper button's digital signal
-   *     attached to the given loop.
+   * @return an event instance representing the left bumper button's digital signal attached to the
+   *     given loop.
    */
   public BooleanEvent leftBumper(EventLoop loop) {
     return m_hid.button(Gamepad.Button.LEFT_BUMPER.value, loop);
@@ -465,8 +465,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
    * Constructs an event instance around the right bumper button's digital signal.
    *
    * @param loop the event loop instance to attach the event to.
-   * @return an event instance representing the right bumper button's digital signal
-   *     attached to the given loop.
+   * @return an event instance representing the right bumper button's digital signal attached to the
+   *     given loop.
    */
   public BooleanEvent rightBumper(EventLoop loop) {
     return m_hid.button(Gamepad.Button.RIGHT_BUMPER.value, loop);
@@ -503,8 +503,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
    * Constructs an event instance around the back button's digital signal.
    *
    * @param loop the event loop instance to attach the event to.
-   * @return an event instance representing the back button's digital signal
-   *     attached to the given loop.
+   * @return an event instance representing the back button's digital signal attached to the given
+   *     loop.
    */
   public BooleanEvent back(EventLoop loop) {
     return m_hid.button(Gamepad.Button.BACK.value, loop);
@@ -541,8 +541,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
    * Constructs an event instance around the start button's digital signal.
    *
    * @param loop the event loop instance to attach the event to.
-   * @return an event instance representing the start button's digital signal
-   *     attached to the given loop.
+   * @return an event instance representing the start button's digital signal attached to the given
+   *     loop.
    */
   public BooleanEvent start(EventLoop loop) {
     return m_hid.button(Gamepad.Button.START.value, loop);
@@ -579,8 +579,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
    * Constructs an event instance around the left stick button's digital signal.
    *
    * @param loop the event loop instance to attach the event to.
-   * @return an event instance representing the left stick button's digital signal
-   *     attached to the given loop.
+   * @return an event instance representing the left stick button's digital signal attached to the
+   *     given loop.
    */
   public BooleanEvent leftStick(EventLoop loop) {
     return m_hid.button(Gamepad.Button.LEFT_STICK.value, loop);
@@ -617,8 +617,8 @@ public class NiDsXboxController implements HIDDevice, TelemetryLoggable {
    * Constructs an event instance around the right stick button's digital signal.
    *
    * @param loop the event loop instance to attach the event to.
-   * @return an event instance representing the right stick button's digital signal
-   *     attached to the given loop.
+   * @return an event instance representing the right stick button's digital signal attached to the
+   *     given loop.
    */
   public BooleanEvent rightStick(EventLoop loop) {
     return m_hid.button(Gamepad.Button.RIGHT_STICK.value, loop);

@@ -40,6 +40,7 @@ public final class WasmSmoke {
       return;
     }
     checkDynamics();
+    TimerSmoke.run();
     FrameworkSmoke.run();
     ModeSmoke.run();
     WatchdogSmoke.run();

@@ -134,7 +134,7 @@ Input sampling and output publication should likewise stay in this shared robot 
 - Construction and `simulationInit()` happen once. Driver-station connection callbacks, disabled transitions, periodic hooks, and `simulationPeriodic()` follow the SDK ordering. Exceptions propagate; failed expirations are not replayed at the same host time.
 - Configured main-loop periods and `addPeriodic(...)` callbacks use the host's monotonic clock. Only due callbacks execute. A period shorter than the host interval is quantized to that interval; missed expirations coalesce instead of replaying a burst.
 - `endCompetition()`/`close()` stop subsequent callbacks. `getLoopStartTime()` uses the host clock.
-- The current driver station has **no selected opmode**. `OpModeRobot.nonePeriodic()` runs, while automatic classpath/JAR discovery and explicit opmode registration/selection are not available. They are not replaced with fake selected modes. With the SDK's UNKNOWN mode, iterative frameworks use disabled-mode callbacks even if the enable bit is set; `robotPeriodic()` still runs.
+- The host selects iterative robot mode independently of enable state: `unknown`, `teleop`, `autonomous`, or `utility`. Omitted or unrecognized mode remains UNKNOWN and uses disabled iterative callbacks, even when enabled. No opmode ID/name or classpath discovery is provided; `OpModeRobot.nonePeriodic()` still runs when no opmode is selected.
 - Native watchdog diagnostics and physical HID outputs are unavailable and fail explicitly if invoked. A custom blocking `RobotBase` subclass needs a host-driven WASM implementation rather than a native loop.
 
 Choose simulated IO using your existing `RobotBase.isSimulation()`/`isReal()` selection. These shadows do not emulate every vendor or HAL API. Avoid hardware/JNI initialization in static fields that run before your simulation selection.
@@ -185,7 +185,7 @@ Open `http://localhost:8099/`. On Windows, `.\gradlew.bat` is equivalent to `./g
 
 The staged browser assets always use canonical `wasm.js`/`wasm.js.wasm` names, even for a native image named `counter`. Serve the staged directory over HTTP, not `file://`.
 
-The browser begins disabled. Open the **Robot simulator** panel and check **Enable robot**. The AdvantageScope frontend displays telemetry without assuming a drivetrain or Pose format; the simulator itself only supplies time and driver-station inputs. Losing focus or hiding the page disables the robot and clears held keyboard keys. Typing in text fields does not drive the robot.
+The browser begins disabled in unknown mode. Open the **Robot simulator** panel, select **teleop** or **autonomous**, then check **Enable robot**. The AdvantageScope frontend displays telemetry without assuming a drivetrain or Pose format; the simulator itself supplies time and driver-station inputs. Losing focus or hiding the page disables the robot and clears held keyboard keys without changing the selected mode. Typing in text fields does not drive the robot.
 
 Standard browser gamepads use their browser indices as robot ports (0–5). Press a controller button if the browser has not exposed it yet. A physical gamepad takes precedence on port zero; otherwise port zero uses the keyboard. Non-standard browser mappings are reported as unsupported rather than guessed. The panel lists the active inputs and provides an alliance selector.
 
@@ -222,14 +222,14 @@ From this repository's root:
 python -m http.server 8099 --directory wasmbot/examples/commands-v3/build/wasm/site
 ```
 
-That example uses a normal `Main` and `Robot`, a real scheduler-driven counter, a different image name, and no core imports in shared Java. The viewer shows `/Example/Counter`, `/Example/DirectCounter`, `/Example/Enabled`, and `/Example/Wasmbot`. `DirectCounter` uses a cached WPILib `DoublePublisher`, not `Telemetry`:
+That example uses a normal `Main` and `Robot`, a real scheduler-driven counter, a different image name, and no core imports in shared Java. Telemetry appears at `/Telemetry/Example/Counter`, `/Telemetry/Example/Enabled`, and `/Telemetry/Example/Wasmbot`. `/Example/DirectCounter` uses a cached WPILib `DoublePublisher`, not `Telemetry`, so its explicit NT path is unchanged:
 
 ```java
 private final DoublePublisher directCounter = NetworkTableInstance.getDefault()
     .getDoubleTopic("/Example/DirectCounter").publish();
 ```
 
-The WASM NetworkTables Java surface supports default-instance typed double and struct publishers with no publisher options: `publish()`, `set(value)`, `set(value, timestampNanos)`, `setDefault(value)`, and `close()`/`unpublish()`. Struct publishing retains WPILib's interfaces and serialization implementation, transports packed values as lowercase hex, and publishes retained nested schemas under `/.schema/struct:<type>`. Other Java NT types, subscriptions, listeners, instance creation, and network client/server startup are not supported. Desktop/hardware builds still use the ordinary SDK implementation.
+The WASM NetworkTables Java surface supports default-instance tables, typed/generic publication of primitive scalars and arrays, raw/struct data, topic properties, schemas, and double-entry reads. Publisher lifetime, defaults, and explicit timestamps are preserved; `SEND_ALL`, `KEEP_DUPLICATES`, and periodic options are accepted by the immediate in-process transport. Struct publishing retains WPILib's interfaces and serialization, transports packed values as lowercase hex, and publishes retained nested schemas under `/.schema/struct:<type>`. Native listeners, subscription queues, extra instances, and network client/server startup remain unsupported. Desktop/hardware builds use the ordinary SDK implementation.
 
 ### Commands V2 example
 
@@ -243,9 +243,9 @@ From the Wasmbot repository root, with the toolchain above configured:
 python -m http.server 8099 --directory examples/commands-v2/build/wasm/site
 ```
 
-Open `http://localhost:8099/` and enable the robot in the simulator panel. This example publishes the same four `/Example/` channels listed above; its native image is named `counter-v2`.
+Open `http://localhost:8099/`, select teleop, and enable the robot in the simulator panel. This example publishes the same telemetry and direct-NT channels listed above; its native image is named `counter-v2`.
 
-Commands V2's scheduler watchdog uses the host's monotonic simulation clock instead of a HAL notifier. Due callbacks run at host tick boundaries or when watchdog expiry is queried/disabled; epoch diagnostics go to standard error. It cannot interrupt blocked JavaScript or detect wall-clock stalls while simulation time is frozen. The bundled `wasmSmoke` suite requires Commands V3 and Phoenix, so use `wasmRun` for this V2-only example rather than installing conflicting commands vendordeps.
+Commands V2's scheduler watchdog uses the host's monotonic simulation clock instead of a HAL notifier. Due callbacks run at host tick boundaries or when watchdog expiry is queried/disabled; epoch diagnostics go to standard error. It cannot interrupt blocked JavaScript or detect wall-clock stalls while simulation time is frozen. The bundled `wasmSmoke` suite requires Commands V3, so use `wasmRun` for this V2-only example rather than installing conflicting commands vendordeps.
 
 
 ## JavaScript host and telemetry
@@ -258,7 +258,7 @@ import { createNetworkTables } from "./shim/networktables.js";
 
 let nowNanos = 0;
 const ds = {
-  enabled: false, alliance: "blue",
+  enabled: false, mode: "teleop", alliance: "blue",
   controllers: [{ name: "Virtual gamepad", axes: Array(6).fill(0), buttons: Array(15).fill(false) }]
 };
 globalThis.wasmbot = {
@@ -273,7 +273,7 @@ networkTables.install(); // adds nt, ntGet, and ntPut to globalThis.wasmbot
 | Field on `globalThis.wasmbot` | Contract |
 | ---------------------------- | -------- |
 | `nowNanos()` | Monotonic simulated time, in nanoseconds. |
-| `driverStation()` | `{enabled, alliance, controllers}`; alliance is `"red"` or `"blue"`. `controllers` contains up to six entries: `null` for disconnected, or `{name, axes, buttons}` as described below. |
+| `driverStation()` | `{enabled, mode, alliance, controllers}`; mode is `"unknown"`, `"teleop"`, `"autonomous"`, or `"utility"` and is independent of enabled state. Alliance is `"red"` or `"blue"`. `controllers` contains up to six entries: `null` for disconnected, or `{name, axes, buttons}` as described below. |
 | `ntGet(path)` | Current host value, or `undefined` if no value exists. |
 | `ntPut(path, value, type?, timestampUs?)` | Publishes a JavaScript value; type defaults to inference and timestamp to the host clock. |
 | `nt` | Shared in-process topic transport installed by `networkTables.install()`. |
@@ -284,11 +284,15 @@ networkTables.install(); // adds nt, ntGet, and ntPut to globalThis.wasmbot
 
 After importing the image and awaiting `GraalVM.run()`, call `wasmbot.start()`. Advance the host clock by 20 ms per default tick and **await the `wasmbot.tick()` Promise before starting another tick**. The supplied viewer serializes ticks and reports startup/runtime failures. JSPI requires neither `SharedArrayBuffer` nor cross-origin isolation.
 
-Telemetry values retain their existing format: primitive scalars and arrays are native JS values; raw bytes, little-endian structs, and protobuf wire bytes are lowercase hex strings. Longs outside JS's safe-integer range are exact decimal strings, including in arrays. The host infers types for untyped telemetry values (numbers are `double`, empty arrays are `double[]`); telemetry's original type strings, properties, and log timestamps are not transported. Explicit NT publications carry their declared type, properties, and microsecond sample timestamps.
+Telemetry registry paths publish under `/Telemetry`; explicit NT publisher paths are unchanged. Declared types, JSON properties, schemas, and sample timestamps are transported. Primitive scalars and arrays are native JS values; raw bytes, little-endian structs, and protobuf bytes use lowercase hex. A struct array is one concatenated packed hex string with type `struct:<type>[]`, including an empty string for an empty array. Longs outside JS's safe-integer range remain exact decimal strings, including in arrays. Java nanosecond timestamps convert to NT4 microseconds once; timestamp values inside payloads retain their original units.
 
 The generic HID bridge supplies each controller port independently. Axis indices 0–5 are left X, left Y, right X, right Y, left trigger, and right trigger. Sticks use `[-1, 1]`; triggers use `[0, 1]`. Buttons are zero-based booleans using WPILib's `Gamepad.Button` indices (up to 26); the browser standard mapping and keyboard supply indices 0–14. Array lengths determine availability masks. D-pad buttons 11–14 also provide POV zero. Press/release edges latch independently until read and are shared across wrappers of the same port; disconnect clears inputs and latches releases. Names and connection state follow the snapshot. Touchpads, rumble, and LED outputs are not emulated.
 
-Custom hosts that omit `controllers` may still provide `{enabled, alliance, leftX, leftY, rightX}`. That snapshot supplies only three axes on port zero, with no buttons or other connected ports.
+`NiDsXboxController` getters and events translate the normalized host layout without remapping `GenericHID` or `Gamepad`. Commands V3's precompiled `CommandNiDsXboxController` also needs an adapter that routes its triggers through those translated events; keep that optional command-library shadow in the consumer's `src/wasm/java/` so Commands V2 consumers do not gain a V3 dependency.
+
+The host-backed SDK Tunables backend is installed before robot construction and updated by the normal iterative lifecycle. Robust tunables receive requests at `/Tunables/<path>/tune` and acknowledge at `/value`; `Selectable` keeps its standard defaults/options and selected-child protocol. Double-entry writes such as AdvantageKit's `/Tuning/...` inputs are independent of this SDK protocol. There is no native listener thread.
+
+Custom hosts that omit `controllers` may still provide `{enabled, mode, alliance, leftX, leftY, rightX}`. That snapshot supplies only three axes on port zero, with no buttons or other connected ports. Omitting mode preserves UNKNOWN rather than implicitly selecting teleop.
 
 ### AdvantageScope-compatible NT4 client
 
@@ -299,10 +303,10 @@ The frontend and Wasm robot must share the same `globalThis.wasmbot.nt` host (an
 - `connect()` asynchronously connects to the installed host; `disconnect()` cancels pending delivery and removes that client's publishers. Reconnecting restores its subscriptions and publications.
 - Exact/prefix subscriptions replay cached samples; topics-only subscriptions announce without values. `sendAll` preserves samples within each delivery period; otherwise only the latest sample is delivered. Overlapping subscriptions merge without duplicate delivery, using the shortest requested period.
 - Topic announcements, removals, and property changes use the usual callbacks. Property values of `null` delete keys. Last-publisher removal deletes a topic unless retained or persistent. Both flags preserve topics only for this host's lifetime; there is no disk persistence.
-- Client publications write back through the same store read by `wasmbot.ntGet`. Conflicting publication types and older timestamps cannot overwrite current values. Values retain their local hook representation; the adapter does not reinterpret telemetry hex strings as NT binary payloads.
+- Client publications write back through the same store read by `wasmbot.ntGet`. Conflicting publication types and older timestamps cannot overwrite current values. The shared host retains its local value representation; the NT4 adapter converts packed hex for raw-backed declared types into byte arrays for AdvantageScope.
 - Server time uses the simulated clock in microseconds; client time uses epoch microseconds. Server time is `null` while disconnected; in-process network latency is zero. Java's explicit NT timestamps are nanoseconds and are converted at the bridge.
 
-Host transport methods are `snapshot()`, `listen(callback)` (returns an unsubscribe function), `publish(owner, name, type, properties)`, `unpublish(owner, name)`, `setProperties(name, update)`, and `put(owner, name, timestampUs, value)`. Listener events have `kind` (`announce`, `unannounce`, `properties`, or `value`) and `topic`; value events also have `timestamp` and `value`. `owner` identifies an individual publisher; clients must share the transport rather than wrap or overwrite the robot hooks.
+Host transport methods are `snapshot()`, `getTopic(name)`, `listen(callback)` (returns an unsubscribe function), `publish(owner, name, type, properties)`, `unpublish(owner, name)`, `setProperties(name, update)`, and `put(owner, name, timestampUs, value)`. Topics expose a monotonically increasing value `revision` and `lastPublisher`, allowing tunables to distinguish external writes from acknowledgements. Listener events have `kind` (`announce`, `unannounce`, `properties`, or `value`) and `topic`; value events also have `timestamp` and `value`. `owner` identifies an individual publisher; clients must share the transport rather than wrap or overwrite the robot hooks.
 
 Run the deterministic adapter regression suite with:
 
@@ -316,12 +320,14 @@ bun test ./tools/wasm-debug/nt4.test.ts
 The plugin creates:
 
 - `wasmRuntime`: bundled runtime sources/resources, compiled against the consumer's ordinary WPILib dependency classpath.
-- `wasm`: optional consumer-only sources from `src/wasm/java/`.
+- `wasm`: optional consumer-only sources/resources from `src/wasm/java/` and `src/wasm/resources/`.
 - `wasmTest`: bundled native behavioral fixtures.
 
 Consumer WASM classes win over bundled shadows, which win over desktop/vendor classes in the native image classpath. None of the shadows/core classes are added to desktop `main` or its robot JAR's compiled packages. The plugin supplies `-parameters` and `-XDstringConcat=inline` for Web Image compatibility, including reachable ordinary robot classes.
 
 For additional native APIs, use simulated IO or matching consumer-specific replacements in `src/wasm/java/<original/package>/`. Implement the APIs the program actually uses; do not silently substitute hardware no-ops. Additional reflection/resource metadata belongs in `src/wasm/resources/META-INF/native-image/`.
+
+Files under the consumer's `src/main/deploy` are bundled as classpath resources under `/wasmbot/deploy/` and included in the native image. A WASM resource-backed loader is still required for libraries that ordinarily use `FileReader`; this does not create a browser host filesystem. WPILib's original Java `Timer` stopwatch is retained and reads the host-backed `RobotController` clock. No FMS match clock or game-specific message is supplied (`-1` and `Optional.empty()` respectively).
 
 After changing GraalVM, WPILib, framework shadows, or browser interop, run both smoke tasks and exercise the staged page. The guarded loader patch must still redirect instantiation and publish Graal's `javaNative` symbol; the host unwraps that symbol before every JSPI export call. Graal's throwable conversion helper and the raw application/continuation metadata exports must remain compatible. Missing JSPI or incompatible hooks produce errors rather than fake continuations.
 

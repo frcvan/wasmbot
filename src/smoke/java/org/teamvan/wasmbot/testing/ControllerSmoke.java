@@ -168,9 +168,13 @@ final class ControllerSmoke {
       require(ni.getLeftBumperButton() && !ni.getRightBumperButton(), "NI left bumper mapping");
       require(ni.getBackButton() && !ni.getStartButton(), "NI back mapping");
       require(ni.getLeftStickButton() && !ni.getRightStickButton(), "NI left stick mapping");
-      require(secondNi.getRightBumperButton() && !secondNi.getLeftBumperButton(), "NI right bumper mapping");
+      require(
+          secondNi.getRightBumperButton() && !secondNi.getLeftBumperButton(),
+          "NI right bumper mapping");
       require(secondNi.getStartButton() && !secondNi.getBackButton(), "NI start mapping");
-      require(secondNi.getRightStickButton() && !secondNi.getLeftStickButton(), "NI right stick mapping");
+      require(
+          secondNi.getRightStickButton() && !secondNi.getLeftStickButton(),
+          "NI right stick mapping");
       EventLoop loop = new EventLoop();
       var leftTrigger = ni.leftTrigger(0.65, loop);
       var rightTrigger = ni.rightTrigger(0.65, loop);

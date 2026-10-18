@@ -70,19 +70,75 @@ final class ModeSmoke {
 
   private static final class Probe extends TimedRobot {
     final List<String> events = new ArrayList<>();
-    @Override public void disabledInit() { events.add("disabledInit"); }
-    @Override public void disabledExit() { events.add("disabledExit"); }
-    @Override public void disabledPeriodic() { events.add("disabledPeriodic"); }
-    @Override public void autonomousInit() { events.add("autoInit"); }
-    @Override public void autonomousExit() { events.add("autoExit"); }
-    @Override public void autonomousPeriodic() { events.add("autoPeriodic"); }
-    @Override public void teleopInit() { events.add("teleopInit"); }
-    @Override public void teleopExit() { events.add("teleopExit"); }
-    @Override public void teleopPeriodic() { events.add("teleopPeriodic"); }
-    @Override public void utilityInit() { events.add("utilityInit"); }
-    @Override public void utilityExit() { events.add("utilityExit"); }
-    @Override public void utilityPeriodic() { events.add("utilityPeriodic"); }
-    @Override public void robotPeriodic() { events.add("robot"); }
-    @Override public void simulationPeriodic() { events.add("simulation"); }
+
+    @Override
+    public void disabledInit() {
+      events.add("disabledInit");
+    }
+
+    @Override
+    public void disabledExit() {
+      events.add("disabledExit");
+    }
+
+    @Override
+    public void disabledPeriodic() {
+      events.add("disabledPeriodic");
+    }
+
+    @Override
+    public void autonomousInit() {
+      events.add("autoInit");
+    }
+
+    @Override
+    public void autonomousExit() {
+      events.add("autoExit");
+    }
+
+    @Override
+    public void autonomousPeriodic() {
+      events.add("autoPeriodic");
+    }
+
+    @Override
+    public void teleopInit() {
+      events.add("teleopInit");
+    }
+
+    @Override
+    public void teleopExit() {
+      events.add("teleopExit");
+    }
+
+    @Override
+    public void teleopPeriodic() {
+      events.add("teleopPeriodic");
+    }
+
+    @Override
+    public void utilityInit() {
+      events.add("utilityInit");
+    }
+
+    @Override
+    public void utilityExit() {
+      events.add("utilityExit");
+    }
+
+    @Override
+    public void utilityPeriodic() {
+      events.add("utilityPeriodic");
+    }
+
+    @Override
+    public void robotPeriodic() {
+      events.add("robot");
+    }
+
+    @Override
+    public void simulationPeriodic() {
+      events.add("simulation");
+    }
   }
 }

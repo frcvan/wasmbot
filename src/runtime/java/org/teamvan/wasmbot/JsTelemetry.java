@@ -97,11 +97,13 @@ public final class JsTelemetry implements TelemetryBackend {
         type = typeString;
         publish(owner, jsPath, JSString.of(typeString));
       } else if (!type.equals(typeString)) {
-        System.err.println("Telemetry type mismatch at " + path + ": " + type + " vs " + typeString);
+        System.err.println(
+            "Telemetry type mismatch at " + path + ": " + type + " vs " + typeString);
         return false;
       }
       return true;
     }
+
     private boolean prepareStruct(Struct<?> struct, boolean array) {
       if (closed) return false;
       if (structSchema == struct && structArray == array) return true;
@@ -111,7 +113,6 @@ public final class JsTelemetry implements TelemetryBackend {
       structArray = array;
       return true;
     }
-
 
     @Override
     public <T> void logStruct(T value, Struct<? super T> struct, long timestamp) {
@@ -286,27 +287,33 @@ public final class JsTelemetry implements TelemetryBackend {
   private static native void publish(JSObject owner, JSString path, JSString type);
 
   @JS.Coerce
-  @JS("let parsed; try { parsed = JSON.parse(value); } catch { return false; }"
-      + " owner.properties[key] = parsed;"
-      + " if (owner.published) globalThis.wasmbot.nt.setProperties(path, {[key]: parsed}); return true;")
-  private static native boolean property(JSObject owner, JSString path, JSString key, JSString value);
+  @JS(
+      "let parsed; try { parsed = JSON.parse(value); } catch { return false; }"
+          + " owner.properties[key] = parsed;"
+          + " if (owner.published) globalThis.wasmbot.nt.setProperties(path, {[key]: parsed}); return true;")
+  private static native boolean property(
+      JSObject owner, JSString path, JSString key, JSString value);
 
   @JS("globalThis.wasmbot.nt.unpublish(owner, path);")
   private static native void unpublish(JSObject owner, JSString path);
 
   @JS.Coerce
   @JS("globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
-  private static native void putNumber(JSObject owner, JSString path, double timestamp, double value);
+  private static native void putNumber(
+      JSObject owner, JSString path, double timestamp, double value);
 
   @JS.Coerce
   @JS("globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
-  private static native void putBoolean(JSObject owner, JSString path, double timestamp, boolean value);
+  private static native void putBoolean(
+      JSObject owner, JSString path, double timestamp, boolean value);
 
   @JS("globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
-  private static native void putString(JSObject owner, JSString path, double timestamp, JSString value);
+  private static native void putString(
+      JSObject owner, JSString path, double timestamp, JSString value);
 
   @JS("globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
-  private static native void putArray(JSObject owner, JSString path, double timestamp, JSObject value);
+  private static native void putArray(
+      JSObject owner, JSString path, double timestamp, JSObject value);
 
   @JS.Coerce
   @JS("return new Array(length);")

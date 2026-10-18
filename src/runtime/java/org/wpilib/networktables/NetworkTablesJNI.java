@@ -11,9 +11,10 @@ import org.graalvm.webimage.api.JSString;
 import org.teamvan.wasmbot.JsBridge;
 
 /**
- * In-process NT JNI boundary. SDK tables, typed/generic publishers, entries, and struct serialization
- * remain in use. Host samples use microseconds; the public Alpha 7 API uses nanoseconds.
- * Network transports, native listeners, and subscriber queues are not implemented here.
+ * In-process NT JNI boundary. SDK tables, typed/generic publishers, entries, and struct
+ * serialization remain in use. Host samples use microseconds; the public Alpha 7 API uses
+ * nanoseconds. Network transports, native listeners, and subscriber queues are not implemented
+ * here.
  */
 public final class NetworkTablesJNI {
   private static final HexFormat HEX = HexFormat.of();
@@ -195,7 +196,8 @@ public final class NetworkTablesJNI {
 
   public static boolean setBoolean(int entry, long time, boolean value) {
     Publication publication = writable(entry, NetworkTableType.BOOLEAN);
-    return publication != null && putBoolean(publication.owner, path(entry), timestamp(time), value);
+    return publication != null
+        && putBoolean(publication.owner, path(entry), timestamp(time), value);
   }
 
   public static boolean setInteger(int entry, long time, long value) {
@@ -235,7 +237,10 @@ public final class NetworkTablesJNI {
     Publication publication = writable(entry, NetworkTableType.RAW);
     if (publication == null) return false;
     Objects.checkFromIndexSize(start, len, value.length);
-    return putString(publication.owner, path(entry), timestamp(time),
+    return putString(
+        publication.owner,
+        path(entry),
+        timestamp(time),
         JSString.of(HEX.formatHex(value, start, start + len)));
   }
 
@@ -379,23 +384,28 @@ public final class NetworkTablesJNI {
   private static native JSObject newOwner();
 
   @JS("globalThis.wasmbot.nt.publish(owner, path, type, JSON.parse(properties));")
-  private static native void publishValue(JSObject owner, JSString path, JSString type, JSString properties);
+  private static native void publishValue(
+      JSObject owner, JSString path, JSString type, JSString properties);
 
   @JS.Coerce
   @JS("return globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
-  private static native boolean putNumber(JSObject owner, JSString path, double timestamp, double value);
+  private static native boolean putNumber(
+      JSObject owner, JSString path, double timestamp, double value);
 
   @JS.Coerce
   @JS("return globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
-  private static native boolean putBoolean(JSObject owner, JSString path, double timestamp, boolean value);
+  private static native boolean putBoolean(
+      JSObject owner, JSString path, double timestamp, boolean value);
 
   @JS.Coerce
   @JS("return globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
-  private static native boolean putString(JSObject owner, JSString path, double timestamp, JSString value);
+  private static native boolean putString(
+      JSObject owner, JSString path, double timestamp, JSString value);
 
   @JS.Coerce
   @JS("return globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
-  private static native boolean putArray(JSObject owner, JSString path, double timestamp, JSObject value);
+  private static native boolean putArray(
+      JSObject owner, JSString path, double timestamp, JSObject value);
 
   @JS.Coerce
   @JS("return new Array(length);")
@@ -413,8 +423,9 @@ public final class NetworkTablesJNI {
   @JS("array[index] = value;")
   private static native void arrayString(JSObject array, int index, JSString value);
 
-  @JS("const owner = {}; globalThis.wasmbot.nt.publish(owner, path, 'structschema', {retained: true});"
-      + " globalThis.wasmbot.nt.put(owner, path, 0, new TextEncoder().encode(value));")
+  @JS(
+      "const owner = {}; globalThis.wasmbot.nt.publish(owner, path, 'structschema', {retained: true});"
+          + " globalThis.wasmbot.nt.put(owner, path, 0, new TextEncoder().encode(value));")
   private static native void publishSchema(JSString path, JSString value);
 
   @JS.Coerce
@@ -422,8 +433,9 @@ public final class NetworkTablesJNI {
   private static native boolean hasValue(JSString path);
 
   @JS.Coerce
-  @JS("const topic = globalThis.wasmbot.nt.getTopic(path);"
-      + " return topic?.type === 'double' && typeof topic.value === 'number' ? topic.value : fallback;")
+  @JS(
+      "const topic = globalThis.wasmbot.nt.getTopic(path);"
+          + " return topic?.type === 'double' && typeof topic.value === 'number' ? topic.value : fallback;")
   private static native double readDouble(JSString path, double fallback);
 
   @JS.Coerce
