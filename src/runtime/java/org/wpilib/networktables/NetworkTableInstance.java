@@ -1,7 +1,10 @@
 package org.wpilib.networktables;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+import org.wpilib.util.struct.Struct;
 
 /**
  * Default, in-process NT instance for host-backed typed publication. Does not construct the desktop
@@ -13,6 +16,7 @@ public final class NetworkTableInstance implements AutoCloseable {
   private final Map<String, Topic> topics = new HashMap<>();
   private final Map<String, DoubleTopic> doubles = new HashMap<>();
   private final Map<String, StructTopic<?>> structs = new HashMap<>();
+  private final Set<String> schemas = new HashSet<>();
 
   private NetworkTableInstance() {}
 
@@ -37,14 +41,25 @@ public final class NetworkTableInstance implements AutoCloseable {
     return doubles.computeIfAbsent(name, key -> new DoubleTopic(getTopic(key)));
   }
 
-  public <T> StructTopic<T> getStructTopic(String name, org.wpilib.util.struct.Struct<T> struct) {
+  public <T> StructTopic<T> getStructTopic(String name, Struct<T> struct) {
     @SuppressWarnings("unchecked")
     StructTopic<T> topic = (StructTopic<T>) structs.get(name);
-    if (topic == null) {
-      topic = new StructTopic<>(name, struct);
+    if (topic == null || !topic.getStruct().equals(struct)) {
+      topic = StructTopic.wrap(getTopic(name), struct);
       structs.put(name, topic);
     }
     return topic;
+  }
+
+  /** Publishes the struct and its nested schemas once for host-side consumers. */
+  public void addSchema(Struct<?> struct) {
+    String type = struct.getTypeString();
+    if (schemas.contains(type)) return;
+    NetworkTablesJNI.addStructSchema(type, struct.getSchema());
+    schemas.add(type);
+    for (Struct<?> nested : struct.getNested()) {
+      addSchema(nested);
+    }
   }
 
   /** The default instance is process-owned, as in the SDK. Close publishers to release topics. */

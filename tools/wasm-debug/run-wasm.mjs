@@ -8,12 +8,12 @@
 //
 // It shims the handful of globals the browser page (shim/sim.js) provides,
 // imports the GraalVM glue, runs the image, then calls wasmbot.start()/wasmbot.tick().
-// Any Java throwable is printed with its message chain and, when the image
-// exposes one, its Java backtrace.
+// Java throwables use Java's complete printStackTrace output; native JS errors retain their stacks.
 import path from "node:path";
 import assert from "node:assert/strict";
 import { pathToFileURL } from "node:url";
 import { createWasmContinuations } from "../../shim/continuations.js";
+import { errorText } from "../../shim/errors.js";
 import { createNetworkTables } from "../../shim/networktables.js";
 
 const args = process.argv.slice(2);
@@ -56,46 +56,7 @@ const config = new globalThis.GraalVM.Config();
 config.wasm_path = `${imagePath}.wasm`;
 await globalThis.GraalVM.run({}, config);
 
-function errorText(error) {
-    const parts = [];
-    let current = error;
-    for (let depth = 0; current && depth < 8; depth++) {
-        const message =
-            typeof current.getMessage === "function"
-                ? current.getMessage()?.toString()
-                : null;
-        const text =
-            typeof message === "string"
-                ? message
-                : (current.stack ?? current.message ?? String(current));
-        const stack = javaStackText(current);
-        if (text && !text.startsWith("[Java Proxy"))
-            parts.push(stack ? `${text}\n${stack}` : text);
-        current =
-            typeof current.getCause === "function" ? current.getCause() : null;
-    }
-    return parts.join("\ncaused by: ") || String(error);
-}
-
-function javaStackText(error) {
-    if (typeof error?.getStackTrace !== "function") return "";
-    try {
-        const stack = error.getStackTrace();
-        const length = Number(
-            stack?.length ??
-                (typeof stack?.getLength === "function" ? stack.getLength() : 0)
-        );
-        const frames = [];
-        for (let i = 0; i < length; i++) {
-            const frame = stack[i] ?? stack.get?.(i);
-            if (frame) frames.push(`    at ${frame.toString()}`);
-        }
-        return frames.length ? `Java stack:\n${frames.join("\n")}` : "";
-    } catch (stackError) {
-        return `Java stack unavailable: ${stackError}`;
-    }
-}
-
+let started = false;
 try {
     let ticks = 0;
     const tick = async (count) => {
@@ -107,6 +68,7 @@ try {
     };
     globalThis.wasmbot.start();
     globalThis.wasmbot.start(); // Repeated startup must not rebuild or reset the robot.
+    started = true;
     await tick(25);
     ds.enabled = true;
     await tick(100);
@@ -136,6 +98,6 @@ try {
         })
     );
 } catch (error) {
-    console.log("START_FAILED: " + errorText(error));
+    console.error((started ? "TICK_FAILED: " : "START_FAILED: ") + errorText(error));
     process.exitCode = 1;
 }

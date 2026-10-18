@@ -35,8 +35,13 @@ public final class WasmSmoke {
   private static int simulationInitCalls;
 
   public static void main(String... args) {
+    if (startupFailureProbe()) {
+      RobotBase.startRobot(WasmSmoke::failStartup);
+      return;
+    }
     checkDynamics();
     FrameworkSmoke.run();
+    NetworkTablesSmoke.run();
     var backend = new JsTelemetry();
     backend.getEntry("/Review/Boolean").logBoolean(true, 0);
     backend.getEntry("/Review/Number").logDouble(1.25, 0);
@@ -90,6 +95,17 @@ public final class WasmSmoke {
         () -> begin(5),
         () -> begin(6),
         () -> events.toString());
+  }
+
+  @JS.Coerce
+  @JS("return globalThis.wasmbot.startupFailureProbe === true;")
+  private static native boolean startupFailureProbe();
+
+  private static RobotBase failStartup() {
+    AssertionError failure = new AssertionError("startup-probe-error");
+    failure.initCause(new IllegalArgumentException("startup-probe-cause"));
+    failure.addSuppressed(new UnsupportedOperationException("startup-probe-suppressed"));
+    throw failure;
   }
 
   private static final class SmokeRobot extends OpModeRobot {
@@ -280,11 +296,16 @@ public final class WasmSmoke {
                   })
               .named("Await parent");
     } else if (scenario == 5) {
-      expectedFailure = new IllegalStateException("probe-target-error");
+      expectedFailure =
+          new IllegalStateException(
+              "probe-target-error", new IllegalArgumentException("probe-target-cause"));
+      expectedFailure.addSuppressed(new UnsupportedOperationException("probe-target-suppressed"));
       active =
           mechanism
               .run(
                   co -> {
+                    events.add("before-throw");
+                    co.yield();
                     events.add("throws");
                     throw expectedFailure;
                   })

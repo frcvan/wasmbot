@@ -214,7 +214,7 @@ private final DoublePublisher directCounter = NetworkTableInstance.getDefault()
     .getDoubleTopic("/Example/DirectCounter").publish();
 ```
 
-The WASM NetworkTables Java surface currently supports default-instance typed double publishers with no publisher options: `publish()`, `set(value)`, `set(value, timestampNanos)`, `setDefault(value)`, and `close()`/`unpublish()`. Other Java NT types, subscriptions, listeners, instance creation, and network client/server startup are not supported. Desktop/hardware builds still use the ordinary SDK implementation.
+The WASM NetworkTables Java surface supports default-instance typed double and struct publishers with no publisher options: `publish()`, `set(value)`, `set(value, timestampNanos)`, `setDefault(value)`, and `close()`/`unpublish()`. Struct publishing retains WPILib's interfaces and serialization implementation, transports packed values as lowercase hex, and publishes retained nested schemas under `/.schema/struct:<type>`. Other Java NT types, subscriptions, listeners, instance creation, and network client/server startup are not supported. Desktop/hardware builds still use the ordinary SDK implementation.
 
 ## JavaScript host and telemetry
 

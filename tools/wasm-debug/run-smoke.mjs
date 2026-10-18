@@ -1,10 +1,11 @@
 // Build with ./gradlew nativeSmokeCompile, then run with a JSPI-capable Node or Bun.
-// Usage: node <library>/tools/wasm-debug/run-smoke.mjs [buildDir] [imageName]
+// Usage: node <library>/tools/wasm-debug/run-smoke.mjs [buildDir] [imageName] [--startup-failure]
 // Defaults: consumer cwd's build/native/nativeSmokeCompile and imageName=wasm.
 import assert from "node:assert/strict";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { createWasmContinuations } from "../../shim/continuations.js";
+import { errorText } from "../../shim/errors.js";
 import { createNetworkTables } from "../../shim/networktables.js";
 
 const dir = path.resolve(
@@ -12,12 +13,15 @@ const dir = path.resolve(
         path.join(process.cwd(), "build/native/nativeSmokeCompile")
 );
 const imageName = process.argv[3] ?? "wasm";
+const startupFailureProbe = process.argv[4] === "--startup-failure";
 const imagePath = path.join(dir, `${imageName}.js`);
 globalThis.document = { currentScript: { src: pathToFileURL(imagePath).href } };
 const values = Object.create(null);
-let now = 0;
+const ntEvents = [];
+let now = 123_456_789;
 const ds = { enabled: false, alliance: "blue", leftX: 0, leftY: 0, rightX: 0 };
 globalThis.wasmbot = {
+    startupFailureProbe,
     nowNanos: () => now,
     driverStation: () => ds,
     continuations: createWasmContinuations()
@@ -25,6 +29,18 @@ globalThis.wasmbot = {
 const networkTables = createNetworkTables(() => now);
 networkTables.install();
 networkTables.listen((event) => {
+    if (
+        event.topic.name.startsWith("/Review/NTStruct") ||
+        event.topic.name.startsWith("/.schema/")
+    ) {
+        ntEvents.push({
+            kind: event.kind,
+            name: event.topic.name,
+            type: event.topic.type,
+            timestamp: event.timestamp,
+            value: event.value
+        });
+    }
     if (event.kind !== "value") return;
     assert.equal(typeof event.topic.name, "string");
     values[event.topic.name] = event.value;
@@ -33,6 +49,30 @@ await import(pathToFileURL(imagePath).href);
 const config = new GraalVM.Config();
 config.wasm_path = `${imagePath}.wasm`;
 await GraalVM.run({}, config);
+
+if (startupFailureProbe) {
+    let original;
+    assert.throws(() => globalThis.wasmbot.start(), (error) => {
+        original = error[globalThis.wasmbot.javaNative];
+        assert.ok(original, "startup must expose the original Java throwable");
+        const text = errorText(error);
+        assert.match(text, /^java\.lang\.AssertionError: startup-probe-error\n/);
+        assert.match(text, /\bat org\.teamvan\.wasmbot\.testing\.WasmSmoke\.failStartup\(/);
+        assert.match(text, /Suppressed: java\.lang\.UnsupportedOperationException: startup-probe-suppressed/);
+        assert.match(text, /Caused by: java\.lang\.IllegalArgumentException: startup-probe-cause/);
+        console.error("[wasmbot] Robot failed to start:", text);
+        return true;
+    });
+    const sameFailure = (error) => {
+        assert.equal(error[globalThis.wasmbot.javaNative], original);
+        assert.match(errorText(error), /^java\.lang\.AssertionError: startup-probe-error\n/);
+        return true;
+    };
+    assert.throws(() => globalThis.wasmbot.start(), sameFailure);
+    await assert.rejects(globalThis.wasmbot.tick(), sameFailure);
+    console.log("STARTUP_ERROR_SMOKE_OK: Java class, frames, cause, suppressed, repeated-start/tick identity");
+    process.exit(0);
+}
 
 const expected = {
     Boolean: true,
@@ -87,6 +127,66 @@ const protobuf = Buffer.concat([
     rotation
 ]);
 assert.equal(values["/Review/Proto"], protobuf.toString("hex"));
+const currentStructEvents = ntEvents.filter(
+    (event) => event.name === "/Review/NTStructCurrent"
+);
+const timedStructEvents = ntEvents.filter(
+    (event) => event.name === "/Review/NTStructTimed"
+);
+assert.deepEqual(currentStructEvents.map((event) => event.kind), [
+    "announce", "value", "value", "unannounce"
+]);
+assert.deepEqual(timedStructEvents.map((event) => event.kind), [
+    "announce", "value", "value", "unannounce", "announce", "value", "unannounce"
+]);
+assert.ok(
+    [...currentStructEvents, ...timedStructEvents].every(
+        (event) => event.type === "struct:Pose2d"
+    ),
+    "the SDK type string must not acquire a duplicate struct: prefix"
+);
+assert.deepEqual(
+    currentStructEvents.filter((event) => event.kind === "value")
+        .map((event) => [event.timestamp, event.value]),
+    [
+        [123_456.789, struct(1.25, -2.5, 0.5)],
+        [123_456.789, struct(3, 4, -1)]
+    ],
+    "default values must not overwrite data; Consumer.accept must publish at current NT time"
+);
+assert.deepEqual(
+    timedStructEvents.filter((event) => event.kind === "value")
+        .map((event) => [event.timestamp, event.value]),
+    [
+        [2_000_000, struct(1.25, -2.5, 0.5)],
+        [4_000_000, struct(3, 4, -1)],
+        [123_456.789, struct(1.25, -2.5, 0.5)]
+    ],
+    "nanoseconds must convert to microseconds; stale/closed writes must drop, peers survive, reopening resets data"
+);
+const ntSnapshot = networkTables.snapshot();
+assert.ok(
+    !ntSnapshot.some((topic) => topic.name.startsWith("/Review/NTStruct")),
+    "closing the last struct publisher must unannounce its topic"
+);
+for (const [name, schema] of Object.entries({
+    Pose2d: "Translation2d translation;Rotation2d rotation",
+    Translation2d: "double x;double y",
+    Rotation2d: "double value"
+})) {
+    const schemaPath = `/.schema/struct:${name}`;
+    const topic = ntSnapshot.find((candidate) => candidate.name === schemaPath);
+    assert.ok(topic, `missing nested struct schema ${schemaPath}`);
+    assert.equal(topic.type, "structschema");
+    assert.equal(topic.properties.retained, true);
+    assert.ok(topic.value instanceof Uint8Array, "schemas must be raw UTF-8 bytes for NT4 clients");
+    assert.equal(Buffer.from(topic.value).toString("utf8"), schema);
+    assert.equal(
+        ntEvents.filter((event) => event.name === schemaPath && event.kind === "value").length,
+        1,
+        "repeated publishers must not republish struct schemas"
+    );
+}
 assert.equal(
     typeof globalThis.wasmbot.probe?.beginYield,
     "function",
@@ -189,15 +289,22 @@ assert.equal(
     "canceling a parent must cancel its child"
 );
 globalThis.wasmbot.probe.beginFailure();
+await tick();
+assert.equal(state(), "[before-throw]");
 await assert.rejects(tick(), (error) => {
-    assert.equal(error.getMessage().toString(), "probe-target-error");
+    const text = errorText(error);
+    assert.match(text, /^java\.lang\.IllegalStateException: probe-target-error\n/);
+    assert.match(text, /\bat org\.teamvan\.wasmbot\.testing\.WasmSmoke\.begin\(/);
+    assert.match(text, /Suppressed: java\.lang\.UnsupportedOperationException: probe-target-suppressed/);
+    assert.match(text, /Caused by: java\.lang\.IllegalArgumentException: probe-target-cause/);
+    console.error("[wasmbot] Robot stopped:", text);
     return true;
 });
 assertLifecycle(); // Failed scheduler ticks leave the rest of robotPeriodic and simulationPeriodic uncalled.
 await tick();
 assert.equal(
     state(),
-    "[throws, original-error]",
+    "[before-throw, throws, original-error]",
     "the original exception must be emitted once and the failed command removed"
 );
 const firstTick = tick();
@@ -205,5 +312,5 @@ await assert.rejects(globalThis.wasmbot.tick(), /concurrently/);
 await firstTick;
 assertLifecycle(); // The overlapping call must not execute any lifecycle callbacks or scheduler work.
 console.log(
-    "NATIVE_SMOKE_OK: RobotBase startup, constructor detection, one-time simulationInit, robotPeriodic-owned scheduler, dynamics, serialization, yielded locals, completion, rescheduling, park/cancel, await, child cancellation, Java exceptions, overlapping-tick rejection"
+    "NATIVE_SMOKE_OK: RobotBase startup, constructor detection, one-time simulationInit, robotPeriodic-owned scheduler, dynamics, serialization, yielded locals, completion, rescheduling, park/cancel, await, child cancellation, original Java exceptions with class/stack/cause/suppressed across yield, overlapping-tick rejection"
 );

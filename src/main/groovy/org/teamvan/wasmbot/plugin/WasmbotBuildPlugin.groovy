@@ -68,7 +68,7 @@ class WasmbotBuildPlugin implements Plugin<Project> {
             imageName.set(extension.imageName)
             mainClass.set('org.teamvan.wasmbot.testing.WasmSmoke')
             classpath.setFrom(smoke.runtimeClasspath)
-            buildArgs.addAll('--tool:svm-wasm', '-H:+UnlockExperimentalVMOptions', '-H:-AutoRunVM')
+            buildArgs.addAll('--tool:svm-wasm', '-H:+UnlockExperimentalVMOptions', '-H:-AutoRunVM', '-H:+DebugNames')
         }
 
         def nativeCompile = project.tasks.named('nativeCompile', BuildNativeImageTask)

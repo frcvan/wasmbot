@@ -135,14 +135,18 @@ try {
     log("generating third-party licenses");
     await import(pathToFileURL(path.join(root, "getLicenses.mjs")).href);
     log("downloading Tesseract language data");
-    await import(pathToFileURL(path.join(root, "tesseractLangDownload.mjs")).href);
+    await import(
+        pathToFileURL(path.join(root, "tesseractLangDownload.mjs")).href
+    );
+    log("bundling Lite assets");
+    await import(pathToFileURL(path.join(root, "bundleLiteAssets.mjs")).href);
 } finally {
     process.chdir(originalWorkingDirectory);
 }
 
 function patchHubHtml(filePath) {
-    const script = `    <script type="module" src="../wasm/sim.js"></script>\n`;
-    const target = `    <script type="module" src="../bundles/hub.js"></script>`;
+    const script = `<script type="module" src="../wasm/sim.js"></script>\n`;
+    const target = `<script type="module" src="../bundles/hub.js"></script>`;
     const contents = fs.readFileSync(filePath, "utf8");
     if (contents.includes(script.trim())) return;
     if (!contents.includes(target)) {

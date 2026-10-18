@@ -1,4 +1,5 @@
 import { createWasmContinuations } from "./continuations.js";
+import { errorText } from "./errors.js";
 import { createNetworkTables } from "./networktables.js";
 
 const currentScriptUrl = import.meta.url;
@@ -98,42 +99,3 @@ try {
     console.error("[wasmbot] Robot failed to start:", errorText(error));
 }
 
-function errorText(error) {
-    const parts = [];
-    let current = error;
-    for (let depth = 0; current && depth < 8; depth++) {
-        const message =
-            typeof current.getMessage === "function"
-                ? current.getMessage()?.toString()
-                : null;
-        const text =
-            typeof message === "string"
-                ? message
-                : (current.stack ?? current.message ?? String(current));
-        const stack = javaStackText(current);
-        if (text && !text.startsWith("[Java Proxy"))
-            parts.push(stack ? `${text}\n${stack}` : text);
-        current =
-            typeof current.getCause === "function" ? current.getCause() : null;
-    }
-    return parts.join("\ncaused by: ") || String(error);
-}
-
-function javaStackText(error) {
-    if (typeof error?.getStackTrace !== "function") return "";
-    try {
-        const stack = error.getStackTrace();
-        const length = Number(
-            stack?.length ??
-                (typeof stack?.getLength === "function" ? stack.getLength() : 0)
-        );
-        const frames = [];
-        for (let i = 0; i < length; i++) {
-            const frame = stack[i] ?? stack.get?.(i);
-            if (frame) frames.push(`    at ${frame.toString()}`);
-        }
-        return frames.length ? `Java stack:\n${frames.join("\n")}` : "";
-    } catch (stackError) {
-        return `Java stack unavailable: ${stackError}`;
-    }
-}

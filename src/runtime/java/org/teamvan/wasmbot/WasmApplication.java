@@ -1,9 +1,9 @@
 package org.teamvan.wasmbot;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import org.graalvm.webimage.api.JS;
 import org.wpilib.framework.RobotBase;
@@ -16,7 +16,7 @@ public final class WasmApplication {
   private final Supplier<? extends RobotBase> factory;
   private RobotBase robot;
   private boolean started;
-  private RuntimeException startupFailure;
+  private Throwable startupFailure;
 
   private WasmApplication(Supplier<? extends RobotBase> factory) {
     this.factory = Objects.requireNonNull(factory);
@@ -35,6 +35,7 @@ public final class WasmApplication {
    */
   public static void launch(Supplier<? extends RobotBase> factory) {
     WasmApplication application = new WasmApplication(factory);
+    exportErrorFormatter(WasmApplication::errorText);
     exportStart(application::start);
     exportTick(application);
   }
@@ -61,15 +62,26 @@ public final class WasmApplication {
       """)
   private static native void exportTick(WasmApplication tick);
 
-  @JS.Coerce
   @JS(
-      args = {"msg"},
-      value = "console.log(msg);")
-  private static native void log(String msg);
+      args = {"format"},
+      value = "globalThis.wasmbot.formatJavaError = error => String(format(error));")
+  private static native void exportErrorFormatter(Function<Throwable, String> format);
+
+  private static String errorText(Throwable failure) {
+    StringWriter out = new StringWriter();
+    failure.printStackTrace(new PrintWriter(out));
+    return out.toString();
+  }
+
+  // Runnable cannot declare Throwable, but startup must preserve even an Error or checked failure.
+  @SuppressWarnings("unchecked")
+  private static <T extends Throwable> void rethrow(Throwable failure) throws T {
+    throw (T) failure;
+  }
 
   private void start() {
     if (startupFailure != null) {
-      throw startupFailure;
+      rethrow(startupFailure);
     }
     if (started) {
       return;
@@ -82,11 +94,8 @@ public final class WasmApplication {
       robot = Objects.requireNonNull(factory.get(), "Robot constructor returned null");
       robot.startCompetition();
     } catch (Throwable t) {
-      ByteArrayOutputStream out = new ByteArrayOutputStream();
-      t.printStackTrace(new PrintStream(out, true, StandardCharsets.UTF_8));
-      log(out.toString(StandardCharsets.UTF_8));
-      startupFailure = new RuntimeException(t);
-      throw startupFailure;
+      startupFailure = t;
+      rethrow(t);
     }
   }
 
