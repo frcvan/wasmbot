@@ -8,7 +8,7 @@
 import { execFileSync } from "child_process";
 import fs from "fs";
 import path from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(scriptDirectory, "build");
@@ -105,11 +105,40 @@ run(
         npmCache,
         "--prefer-offline",
         "--no-audit",
-        "--no-fund"
+        "--no-fund",
+        "--ignore-scripts"
     ],
     root,
     { YOUTUBE_DL_SKIP_DOWNLOAD: "true" }
 );
+if (!skipDocs) {
+    log("installing documentation dependencies");
+    run(
+        process.platform === "win32" ? "npm.cmd" : "npm",
+        [
+            "install",
+            "--cache",
+            npmCache,
+            "--prefer-offline",
+            "--no-audit",
+            "--no-fund",
+            "--ignore-scripts"
+        ],
+        path.join(root, "docs")
+    );
+}
+
+// These upstream modules resolve their inputs and outputs against process.cwd().
+const originalWorkingDirectory = process.cwd();
+try {
+    process.chdir(root);
+    log("generating third-party licenses");
+    await import(pathToFileURL(path.join(root, "getLicenses.mjs")).href);
+    log("downloading Tesseract language data");
+    await import(pathToFileURL(path.join(root, "tesseractLangDownload.mjs")).href);
+} finally {
+    process.chdir(originalWorkingDirectory);
+}
 
 function patchHubHtml(filePath) {
     const script = `    <script type="module" src="../wasm/sim.js"></script>\n`;
@@ -293,7 +322,10 @@ copyDirectory(path.join(root, "www"), path.join(staticRoot, "www"));
 if (skipDocs) {
     fs.rmSync(path.join(staticRoot, "docs"), { recursive: true, force: true });
 } else {
-    copyDirectory(path.join(root, "docs", "build"), path.join(staticRoot, "docs"));
+    copyDirectory(
+        path.join(root, "docs", "build"),
+        path.join(staticRoot, "docs")
+    );
 }
 patchHubHtml(path.join(staticRoot, "www", "hub.html"));
 
