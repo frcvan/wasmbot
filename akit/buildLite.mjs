@@ -96,27 +96,12 @@ log(`starting ${distribution} build${skipDocs ? " without docs" : ""}`);
 log(`AdvantageScope source directory: ${root}`);
 cloneAscope(root);
 
-log("installing AdvantageScope dependencies");
-run(
-    process.platform === "win32" ? "npm.cmd" : "npm",
-    [
-        "ci",
-        "--cache",
-        npmCache,
-        "--prefer-offline",
-        "--no-audit",
-        "--no-fund",
-        "--ignore-scripts"
-    ],
-    root,
-    { YOUTUBE_DL_SKIP_DOWNLOAD: "true" }
-);
-if (!skipDocs) {
-    log("installing documentation dependencies");
+function installDeps() {
+    log("installing AdvantageScope dependencies");
     run(
-        process.platform === "win32" ? "npm.cmd" : "npm",
+        "npm",
         [
-            "install",
+            "ci",
             "--cache",
             npmCache,
             "--prefer-offline",
@@ -124,25 +109,39 @@ if (!skipDocs) {
             "--no-fund",
             "--ignore-scripts"
         ],
-        path.join(root, "docs")
+        root,
+        { YOUTUBE_DL_SKIP_DOWNLOAD: "true" }
     );
+    if (!skipDocs) {
+        log("installing documentation dependencies");
+        run(
+            "npm",
+            [
+                "install",
+                "--cache",
+                npmCache,
+                "--prefer-offline",
+                "--no-audit",
+                "--no-fund",
+                "--ignore-scripts"
+            ],
+            path.join(root, "docs")
+        );
+    }
 }
 
-// These upstream modules resolve their inputs and outputs against process.cwd().
-const originalWorkingDirectory = process.cwd();
-try {
-    process.chdir(root);
-    log("generating third-party licenses");
-    await import(pathToFileURL(path.join(root, "getLicenses.mjs")).href);
-    log("downloading Tesseract language data");
-    await import(
-        pathToFileURL(path.join(root, "tesseractLangDownload.mjs")).href
-    );
-    log("bundling Lite assets");
-    await import(pathToFileURL(path.join(root, "bundleLiteAssets.mjs")).href);
-} finally {
-    process.chdir(originalWorkingDirectory);
+if (!fs.existsSync(path.join(root, "node_modules", ".bin", "tsc"))) {
+    installDeps();
+} else {
+    log("AdvantageScope dependencies already installed");
 }
+
+log("generating third-party licenses");
+run("node", ["getLicenses.mjs"], root);
+log("downloading Tesseract language data");
+run("node", ["tesseractLangDownload.mjs"], root);
+log("bundling Lite assets");
+run("node", ["bundleLiteAssets.mjs"], root);
 
 function patchHubHtml(filePath) {
     const script = `<script type="module" src="../wasm/sim.js"></script>\n`;
@@ -291,25 +290,13 @@ log("installed Wasmbot NT4 adapter");
 try {
     // Generate the Lite bundles and WebAssembly module.
     log("building TypeScript bundles");
-    run(
-        process.platform === "win32" ? "npm.cmd" : "npm",
-        ["run", "compile"],
-        root
-    );
-    run(
-        process.platform === "win32" ? "npm.cmd" : "npm",
-        ["run", "wasm:compile"],
-        root
-    );
+    run("npm", ["run", "compile"], root);
+    run("npm", ["run", "wasm:compile"], root);
     if (skipDocs) {
         log("skipping embedded documentation build");
     } else {
         log("building embedded documentation");
-        run(
-            process.platform === "win32" ? "npm.cmd" : "npm",
-            ["run", "docs:build-embed"],
-            root
-        );
+        run("npm", ["run", "docs:build-embed"], root);
     }
 } finally {
     log("restoring temporary AdvantageScope source patches");

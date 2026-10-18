@@ -13,7 +13,8 @@ final class ControllerSmoke {
     expose(() -> check(phase()));
   }
 
-  @JS("globalThis.wasmbot.checkControllers = phase => { globalThis.wasmbot.controllerSmokePhase = phase; check(); };")
+  @JS(
+      "globalThis.wasmbot.checkControllers = phase => { globalThis.wasmbot.controllerSmokePhase = phase; check(); };")
   private static native void expose(Runnable check);
 
   @JS.Coerce

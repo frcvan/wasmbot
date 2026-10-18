@@ -41,6 +41,7 @@ public final class WasmSmoke {
     }
     checkDynamics();
     FrameworkSmoke.run();
+    WatchdogSmoke.run();
     NetworkTablesSmoke.run();
     ControllerSmoke.run();
     var backend = new JsTelemetry();

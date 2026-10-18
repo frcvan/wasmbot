@@ -1,6 +1,6 @@
 # Wasmbot
 
-`wasmbot` builds ordinary FRC WPILib Commands V3 robot programs with GraalVM Web Image. The runtime package is **`org.teamvan.wasmbot`**. The same `Robot` class and its `robotPeriodic()` method run on desktop/hardware and under WASM; there is no separate simulation lifecycle adapter.
+`wasmbot` builds ordinary FRC WPILib Commands V2 and Commands V3 robot programs with GraalVM Web Image. The runtime package is **`org.teamvan.wasmbot`**. The same `Robot` class and its `robotPeriodic()` method run on desktop/hardware and under WASM; there is no separate simulation lifecycle adapter.
 
 The plugin owns the runtime/shadows, JSPI continuation engine, native build configuration, generic browser telemetry viewer, and native smoke suite. It contains no project-specific drivetrain acceptance tests or Pose-channel assumptions. Struct/protobuf publishing retains its existing hex wire format.
 
@@ -10,7 +10,7 @@ LLMs were used to generate code for this project. All generated output was revie
 
 ## Requirements
 
-- Gradle 9.4.1, Java 25, and WPILib 2027 alpha-7 with its Commands V3 vendordep are the supported baseline.
+- Gradle 9.4.1, Java 25, and WPILib 2027 alpha-7 with either its Commands V2 or Commands V3 vendordep are the supported baseline.
 - A GraalVM JDK containing Web Image (`native-image --tool:svm-wasm` and `org.graalvm.webimage.api`). A normal Java 25 JDK alone cannot compile the WASM runtime.
 - Binaryen on `PATH` and a GraalVM-supported native compiler.
 - A JSPI-capable JavaScript runtime for CLI smokes, and a JSPI-capable browser for the viewer: both `WebAssembly.Suspending` and `WebAssembly.promising` must exist. Bun is the default CLI runtime.
@@ -26,7 +26,7 @@ $env:VSCMD_ARG_HOST_ARCH
 $env:VSCMD_ARG_TGT_ARCH
 ```
 
-Both architecture values must be `x64`. Adjust the JDK path for another installation, and ensure Gradle's JVM/toolchain configuration does not select a different compiler. Keep the consumer's ordinary WPILib and vendor Java dependencies, including Commands V3; Commands V2 and V3 cannot coexist.
+Both architecture values must be `x64`. Adjust the JDK path for another installation, and ensure Gradle's JVM/toolchain configuration does not select a different compiler. Keep the consumer's ordinary WPILib and vendor Java dependencies, including its chosen commands vendordep; Commands V2 and V3 cannot coexist.
 
 ## Install the plugin
 
@@ -230,6 +230,23 @@ private final DoublePublisher directCounter = NetworkTableInstance.getDefault()
 ```
 
 The WASM NetworkTables Java surface supports default-instance typed double and struct publishers with no publisher options: `publish()`, `set(value)`, `set(value, timestampNanos)`, `setDefault(value)`, and `close()`/`unpublish()`. Struct publishing retains WPILib's interfaces and serialization implementation, transports packed values as lowercase hex, and publishes retained nested schemas under `/.schema/struct:<type>`. Other Java NT types, subscriptions, listeners, instance creation, and network client/server startup are not supported. Desktop/hardware builds still use the ordinary SDK implementation.
+
+### Commands V2 example
+
+The independent [Commands V2 example](examples/commands-v2) uses only the Commands V2 vendordep, a standard `Main`, and a `TimedRobot`. Its `Counter` extends `SubsystemBase` and installs a default command; `robotPeriodic()` calls the real `CommandScheduler.getInstance().run()` exactly once per cycle. Unlike Commands V3, Commands V2 automatically prevents ordinary commands from running while disabled. The counter freezes while disabled and resumes after the default command is scheduled on re-enable.
+
+From the Wasmbot repository root, with the toolchain above configured:
+
+```sh
+./gradlew publishToMavenLocal
+./gradlew -p examples/commands-v2 wasmRun wasmSite advantagescope
+python -m http.server 8099 --directory examples/commands-v2/build/wasm/site
+```
+
+Open `http://localhost:8099/` and enable the robot in the simulator panel. This example publishes the same four `/Example/` channels listed above; its native image is named `counter-v2`.
+
+Commands V2's scheduler watchdog uses the host's monotonic simulation clock instead of a HAL notifier. Due callbacks run at host tick boundaries or when watchdog expiry is queried/disabled; epoch diagnostics go to standard error. It cannot interrupt blocked JavaScript or detect wall-clock stalls while simulation time is frozen. The bundled `wasmSmoke` suite requires Commands V3 and Phoenix, so use `wasmRun` for this V2-only example rather than installing conflicting commands vendordeps.
+
 
 ## JavaScript host and telemetry
 

@@ -7,6 +7,7 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 import org.graalvm.webimage.api.JS;
 import org.wpilib.framework.RobotBase;
+import org.wpilib.system.Watchdog;
 
 /** Nonblocking JavaScript-hosted launcher for ordinary WPILib robot programs. */
 public final class WasmApplication {
@@ -108,6 +109,8 @@ public final class WasmApplication {
   public void tick() {
     start();
     WasmRuntime.refresh();
+    Watchdog.poll();
     robot.wasmTick();
+    Watchdog.poll();
   }
 }
