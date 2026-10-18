@@ -244,6 +244,49 @@ async function tick(count = 1) {
     }
 }
 await tick(2); // Disabled cycles still run robotPeriodic, the scheduler, and simulationPeriodic.
+ds.leftX = 0.25;
+ds.leftY = -0.5;
+ds.rightX = 0.75;
+await tick();
+globalThis.wasmbot.checkControllers(0);
+const controllerButtons = (...indices) =>
+    Array.from({ length: 26 }, (_, index) => indices.includes(index));
+ds.controllers = [
+    {
+        name: "Primary",
+        axes: [0.2, -0.3, 0.4, -0.5, 0.6, 0.7],
+        buttons: controllerButtons(0, 1, 11, 14, 25)
+    },
+    {
+        name: "Secondary",
+        axes: [-0.8, 0.9, -1, 1, 0.25, 0.75],
+        buttons: controllerButtons(0)
+    },
+    null,
+    null,
+    null,
+    { name: "Last port", axes: [0.1], buttons: controllerButtons(25) }
+];
+await tick();
+globalThis.wasmbot.checkControllers(1);
+await tick(2);
+globalThis.wasmbot.checkControllers(2);
+ds.controllers[0].buttons[1] = false;
+await tick(2);
+globalThis.wasmbot.checkControllers(3);
+ds.controllers = [null, null, null, null, null, null];
+await tick();
+globalThis.wasmbot.checkControllers(4);
+ds.controllers[0] = { name: "Short controller", axes: [-0.2, 0.4], buttons: [true] };
+await tick();
+globalThis.wasmbot.checkControllers(5);
+delete ds.controllers;
+await tick();
+globalThis.wasmbot.checkControllers(6);
+ds.leftX = 0;
+ds.leftY = 0;
+ds.rightX = 0;
+console.log("CONTROLLER_SMOKE_OK: legacy, six ports, axes/triggers, capabilities, independent latched edges, disconnect/reconnect");
 ds.enabled = true;
 const state = () => globalThis.wasmbot.probe.state().toString();
 globalThis.wasmbot.probe.beginYield();

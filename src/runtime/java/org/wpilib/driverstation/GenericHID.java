@@ -15,10 +15,10 @@ import org.wpilib.util.Pair;
 /**
  * HAL-free HID backed by the browser Driver Station snapshot.
  *
- * <p>Port zero provides raw axes 0 (left X), 1 (left Y), and 2 (right X), matching the WPILib
- * gamepad axis mapping. The host does not publish other axes, buttons, POVs, or touchpads: those
- * inputs remain neutral and are absent from the availability masks. Ports one through five are
- * disconnected. No native HID outputs are available.
+ * <p>Six ports expose the host's normalized WPILib gamepad axes and zero-based buttons. Capability
+ * masks reflect each connected controller's snapshot arrays. A complete D-pad also exposes one
+ * derived POV; touchpads remain unavailable. Legacy hosts provide only port zero's first three
+ * axes. No native HID outputs are available.
  */
 public final class GenericHID implements HIDDevice {
   /** A rumble output on a controller. */
@@ -102,24 +102,24 @@ public final class GenericHID implements HIDDevice {
   }
 
   /**
-   * @return false; the snapshot provides no buttons
+   * @return the current state of the zero-based button, or false when unavailable
    */
   public boolean getRawButton(int button) {
-    return false;
+    return WasmRuntime.getControllerButton(m_port, button);
   }
 
   /**
-   * @return false; an unavailable button has no press edges
+   * @return whether this button was pressed since the last press check on this port
    */
   public boolean getRawButtonPressed(int button) {
-    return false;
+    return WasmRuntime.getControllerButtonPressed(m_port, button);
   }
 
   /**
-   * @return false; an unavailable button has no release edges
+   * @return whether this button was released since the last release check, including disconnects
    */
   public boolean getRawButtonReleased(int button) {
-    return false;
+    return WasmRuntime.getControllerButtonReleased(m_port, button);
   }
 
   public BooleanEvent button(int button, EventLoop loop) {
@@ -133,22 +133,31 @@ public final class GenericHID implements HIDDevice {
    * @return the latest supported axis value, or zero for an unavailable axis or port
    */
   public double getRawAxis(int axis) {
-    if (m_port != 0) {
-      return 0.0;
-    }
-    return switch (axis) {
-      case 0 -> WasmRuntime.getLeftX();
-      case 1 -> WasmRuntime.getLeftY();
-      case 2 -> WasmRuntime.getRightX();
-      default -> 0.0;
-    };
+    return WasmRuntime.getControllerAxis(m_port, axis);
   }
 
   /**
-   * @return center; the snapshot provides no POVs
+   * @return the D-pad direction for POV zero, or center when unavailable
    */
   public POVDirection getPOV(int pov) {
-    return POVDirection.CENTER;
+    if (pov != 0 || getPOVsAvailable() == 0) {
+      return POVDirection.CENTER;
+    }
+    int horizontal = (getRawButton(14) ? 1 : 0) - (getRawButton(13) ? 1 : 0);
+    int vertical = (getRawButton(12) ? 1 : 0) - (getRawButton(11) ? 1 : 0);
+    if (vertical < 0) {
+      return horizontal < 0
+          ? POVDirection.UP_LEFT
+          : horizontal > 0 ? POVDirection.UP_RIGHT : POVDirection.UP;
+    }
+    if (vertical > 0) {
+      return horizontal < 0
+          ? POVDirection.DOWN_LEFT
+          : horizontal > 0 ? POVDirection.DOWN_RIGHT : POVDirection.DOWN;
+    }
+    return horizontal < 0
+        ? POVDirection.LEFT
+        : horizontal > 0 ? POVDirection.RIGHT : POVDirection.CENTER;
   }
 
   public POVDirection getPOV() {
@@ -225,41 +234,41 @@ public final class GenericHID implements HIDDevice {
    * @return the same contiguous axis upper bound used by WPILib
    */
   public int getAxesMaximumIndex() {
-    return m_port == 0 ? 3 : 0;
+    return WasmRuntime.getControllerAxisCount(m_port);
   }
 
   /**
    * @return the bitmask of available axes, not an axis count
    */
   public int getAxesAvailable() {
-    return m_port == 0 ? 0b111 : 0;
+    return (1 << getAxesMaximumIndex()) - 1;
   }
 
   public int getPOVsMaximumIndex() {
-    return 0;
+    return getPOVsAvailable();
   }
 
   public int getPOVsAvailable() {
-    return 0;
+    return isConnected() && getButtonsMaximumIndex() >= 15 ? 1 : 0;
   }
 
   public int getButtonsMaximumIndex() {
-    return 0;
+    return WasmRuntime.getControllerButtonCount(m_port);
   }
 
   public long getButtonsAvailable() {
-    return 0L;
+    return (1L << getButtonsMaximumIndex()) - 1;
   }
 
   /**
-   * @return whether port zero has received a browser Driver Station snapshot
+   * @return whether the host supplies a controller on this port
    */
   public boolean isConnected() {
-    return m_port == 0 && WasmRuntime.isDSAttached();
+    return WasmRuntime.isControllerConnected(m_port);
   }
 
   /**
-   * @return unknown; a keyboard-backed virtual HID is not a physical controller
+   * @return unknown; snapshots do not identify a native HID hardware type
    */
   public HIDType getGamepadType() {
     return HIDType.UNKNOWN;
@@ -273,7 +282,7 @@ public final class GenericHID implements HIDDevice {
   }
 
   public String getName() {
-    return m_port == 0 ? "Browser keyboard" : "";
+    return WasmRuntime.getControllerName(m_port);
   }
 
   public int getPort() {

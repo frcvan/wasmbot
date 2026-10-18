@@ -19,8 +19,8 @@ import org.wpilib.telemetry.TelemetryTable;
  * Handle input from the browser-backed Driver Station gamepad.
  *
  * <p>This HAL-free wrapper retains WPILib 2027 axis mappings, deadbands, button factories, and
- * telemetry. Only the three axes advertised by {@link GenericHID} have host inputs; all other
- * inputs are neutral, and controller outputs fail explicitly.
+ * telemetry. Each port reads the axes and zero-based buttons advertised by its host controller;
+ * unavailable inputs are neutral. Controller outputs fail explicitly.
  *
  * <p>This class handles Gamepad input that comes from the Driver Station. Each time a value is
  * requested the most recent value is returned. There is a single class instance for each controller

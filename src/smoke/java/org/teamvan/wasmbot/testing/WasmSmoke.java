@@ -42,6 +42,7 @@ public final class WasmSmoke {
     checkDynamics();
     FrameworkSmoke.run();
     NetworkTablesSmoke.run();
+    ControllerSmoke.run();
     var backend = new JsTelemetry();
     backend.getEntry("/Review/Boolean").logBoolean(true, 0);
     backend.getEntry("/Review/Number").logDouble(1.25, 0);

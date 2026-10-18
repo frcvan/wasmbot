@@ -185,7 +185,22 @@ Open `http://localhost:8099/`. On Windows, `.\gradlew.bat` is equivalent to `./g
 
 The staged browser assets always use canonical `wasm.js`/`wasm.js.wasm` names, even for a native image named `counter`. Serve the staged directory over HTTP, not `file://`.
 
-The browser begins disabled. Enable it with the checkbox. It displays all telemetry topics without assuming a drivetrain or a Pose format. W/S change left Y, A/D left X, Q/E right X, and Shift chooses red alliance. Text is rendered as text, not executable HTML.
+The browser begins disabled. Open the **Robot simulator** panel and check **Enable robot**. The AdvantageScope frontend displays telemetry without assuming a drivetrain or Pose format; the simulator itself only supplies time and driver-station inputs. Losing focus or hiding the page disables the robot and clears held keyboard keys. Typing in text fields does not drive the robot.
+
+Standard browser gamepads use their browser indices as robot ports (0–5). Press a controller button if the browser has not exposed it yet. A physical gamepad takes precedence on port zero; otherwise port zero uses the keyboard. Non-standard browser mappings are reported as unsupported rather than guessed. The panel lists the active inputs and provides an alliance selector.
+
+| Keyboard | Gamepad input |
+| --- | --- |
+| W/S, A/D | Left Y, left X |
+| Q/E, R/F | Right X, right Y |
+| Z/C | Left/right triggers |
+| J/K/U/I | Face down/right/left/up |
+| 1/3 | Left/right bumpers |
+| B/Enter, Home | Back/start, guide |
+| V/N, arrow keys | Stick clicks, D-pad |
+| Shift | Red alliance while held |
+
+`examples/drivetrain` uses a port-zero `Gamepad` with its normal deadbands. Forward speed is limited to 3 m/s and acceleration to 3 m/s²; turn rate is limited to π rad/s and angular acceleration to 2π rad/s². It integrates averaged velocities along an arc, turns clockwise for right-stick-right, and freezes its pose while disabled. Smoothing belongs to the example, not the generic simulator, so other robots receive unfiltered inputs.
 
 The low-level tools in `build/wasm/library/tools/wasm-debug/` accept:
 
@@ -225,7 +240,10 @@ import { createWasmContinuations } from "./shim/continuations.js";
 import { createNetworkTables } from "./shim/networktables.js";
 
 let nowNanos = 0;
-const ds = { enabled: false, alliance: "blue", leftX: 0, leftY: 0, rightX: 0 };
+const ds = {
+  enabled: false, alliance: "blue",
+  controllers: [{ name: "Virtual gamepad", axes: Array(6).fill(0), buttons: Array(15).fill(false) }]
+};
 globalThis.wasmbot = {
   nowNanos: () => nowNanos,
   driverStation: () => ds,
@@ -238,7 +256,7 @@ networkTables.install(); // adds nt, ntGet, and ntPut to globalThis.wasmbot
 | Field on `globalThis.wasmbot` | Contract |
 | ---------------------------- | -------- |
 | `nowNanos()` | Monotonic simulated time, in nanoseconds. |
-| `driverStation()` | `{enabled, alliance, leftX, leftY, rightX}`; alliance is `"red"` or `"blue"`, axes are in `[-1, 1]`. |
+| `driverStation()` | `{enabled, alliance, controllers}`; alliance is `"red"` or `"blue"`. `controllers` contains up to six entries: `null` for disconnected, or `{name, axes, buttons}` as described below. |
 | `ntGet(path)` | Current host value, or `undefined` if no value exists. |
 | `ntPut(path, value, type?, timestampUs?)` | Publishes a JavaScript value; type defaults to inference and timestamp to the host clock. |
 | `nt` | Shared in-process topic transport installed by `networkTables.install()`. |
@@ -251,7 +269,9 @@ After importing the image and awaiting `GraalVM.run()`, call `wasmbot.start()`. 
 
 Telemetry values retain their existing format: primitive scalars and arrays are native JS values; raw bytes, little-endian structs, and protobuf wire bytes are lowercase hex strings. Longs outside JS's safe-integer range are exact decimal strings, including in arrays. The host infers types for untyped telemetry values (numbers are `double`, empty arrays are `double[]`); telemetry's original type strings, properties, and log timestamps are not transported. Explicit NT publications carry their declared type, properties, and microsecond sample timestamps.
 
-The virtual HID on port zero exposes the three host axes through raw axes 0/1/2 and the standard Gamepad mapping/deadbands. Other controls are neutral and absent from availability masks; ports one through five are disconnected. The supplied host does not publish right-Y, triggers, buttons, POVs, or touchpads. Rumble and LED outputs are not emulated.
+The generic HID bridge supplies each controller port independently. Axis indices 0–5 are left X, left Y, right X, right Y, left trigger, and right trigger. Sticks use `[-1, 1]`; triggers use `[0, 1]`. Buttons are zero-based booleans using WPILib's `Gamepad.Button` indices (up to 26); the browser standard mapping and keyboard supply indices 0–14. Array lengths determine availability masks. D-pad buttons 11–14 also provide POV zero. Press/release edges latch independently until read and are shared across wrappers of the same port; disconnect clears inputs and latches releases. Names and connection state follow the snapshot. Touchpads, rumble, and LED outputs are not emulated.
+
+Custom hosts that omit `controllers` may still provide `{enabled, alliance, leftX, leftY, rightX}`. That snapshot supplies only three axes on port zero, with no buttons or other connected ports.
 
 ### AdvantageScope-compatible NT4 client
 
