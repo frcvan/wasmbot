@@ -1,5 +1,6 @@
 package org.teamvan.wasmbot.plugin
 
+import groovy.json.JsonSlurper
 import org.graalvm.buildtools.gradle.dsl.GraalVMExtension
 import org.graalvm.buildtools.gradle.tasks.BuildNativeImageTask
 import org.gradle.api.Plugin
@@ -26,9 +27,27 @@ class WasmbotBuildPlugin implements Plugin<Project> {
 
         SourceSetContainer sourceSets = project.extensions.getByType(SourceSetContainer)
         SourceSet main = sourceSets.getByName(SourceSet.MAIN_SOURCE_SET_NAME)
+        boolean hasAdvantageKit = project.fileTree('vendordeps') { include '*.json' }.files.any { file ->
+            def vendor = new JsonSlurper().parse(file)
+            vendor.javaDependencies?.any {
+                it.groupId == 'org.littletonrobotics.akit' && it.artifactId == 'akit-java'
+            }
+        }
+        // Only an installed vendordep enables support; use its resolved consumer version.
+        def advantageKitVersion = project.providers.provider {
+            if (!hasAdvantageKit) return null
+            project.configurations.getByName(main.compileClasspathConfigurationName)
+                    .incoming.resolutionResult.allComponents.find {
+                        it.moduleVersion?.group == 'org.littletonrobotics.akit' &&
+                                it.moduleVersion?.name == 'akit-java'
+                    }?.moduleVersion?.version
+        }
         SourceSet runtime = sourceSets.create('wasmRuntime') {
             java.setSrcDirs([prepare.flatMap { it.outputDirectory.dir('runtime/java') }])
             resources.setSrcDirs([prepare.flatMap { it.outputDirectory.dir('runtime/resources') }])
+        }
+        if (hasAdvantageKit) {
+            runtime.java.srcDir(prepare.flatMap { it.outputDirectory.dir('advantagekit/java') })
         }
         // Compile bundled shadows independently: robot classes cannot mask the library's own types.
         runtime.compileClasspath = main.compileClasspath
@@ -49,6 +68,14 @@ class WasmbotBuildPlugin implements Plugin<Project> {
                 smoke.compileClasspath
         smoke.runtimeClasspath = smoke.output + wasm.runtimeClasspath +
                 project.configurations.getByName(smoke.runtimeClasspathConfigurationName)
+        if (hasAdvantageKit) {
+            [main, wasm, smoke].each { source ->
+                project.configurations.getByName(source.annotationProcessorConfigurationName).dependencies.addAllLater(
+                        advantageKitVersion.map { version ->
+                            [project.dependencies.create("org.littletonrobotics.akit:akit-autolog:${version}")]
+                        }.orElse([]))
+            }
+        }
 
         project.tasks.named(runtime.compileJavaTaskName) { dependsOn(prepare) }
         project.tasks.named(runtime.processResourcesTaskName) { dependsOn(prepare) }
@@ -78,6 +105,34 @@ class WasmbotBuildPlugin implements Plugin<Project> {
 
         def nativeCompile = project.tasks.named('nativeCompile', BuildNativeImageTask)
         def nativeSmokeCompile = project.tasks.named('nativeSmokeCompile', BuildNativeImageTask)
+        if (hasAdvantageKit) {
+            def reflectionFile = project.layout.buildDirectory.file('wasm/reflection/main/reflect-config.json')
+            def smokeReflectionFile = project.layout.buildDirectory.file('wasm/reflection/smoke/reflect-config.json')
+            def reflection = project.tasks.register('generateWasmAutoLogOutputReflection', GenerateAutoLogOutputReflection) {
+                group = 'WASM'
+                description = 'Generates reflection metadata for annotated outputs and object discovery.'
+                classpath.from(wasm.runtimeClasspath)
+                applicationClasses.from(wasm.output.classesDirs, main.output.classesDirs)
+                outputFile.set(reflectionFile)
+            }
+            def smokeReflection = project.tasks.register('generateWasmSmokeAutoLogOutputReflection', GenerateAutoLogOutputReflection) {
+                group = 'WASM'
+                description = 'Generates AutoLogOutput reflection metadata for the smoke image.'
+                classpath.from(smoke.runtimeClasspath)
+                applicationClasses.from(smoke.output.classesDirs, wasm.output.classesDirs, main.output.classesDirs)
+                outputFile.set(smokeReflectionFile)
+            }
+            [[nativeCompile, reflection, reflectionFile],
+             [nativeSmokeCompile, smokeReflection, smokeReflectionFile]].each { pair ->
+                pair[0].configure {
+                    dependsOn(pair[1])
+                    inputs.file(pair[1].flatMap { it.outputFile })
+                    options.get().buildArgs.add(pair[2].map {
+                        '-H:ReflectionConfigurationFiles=' + it.asFile.absolutePath
+                    })
+                }
+            }
+        }
         nativeCompile.configure { dependsOn(wasm.classesTaskName) }
         nativeSmokeCompile.configure { dependsOn(smoke.classesTaskName) }
         // Keep native-image outputs sensitive to changes in the bundled runtime shadows.

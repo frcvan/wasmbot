@@ -2,3 +2,6 @@
 build/
 .npm-cache/
 akit/.npm-cache/
+
+
+*.env*

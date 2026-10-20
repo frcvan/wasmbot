@@ -5,7 +5,7 @@ import java.util.PriorityQueue;
 import org.wpilib.system.RobotController;
 
 /** The nonblocking, host-clock equivalent of WPILib's notifier callback queue. */
-final class HostPeriodicCallbacks {
+public final class HostPeriodicCallbacks {
   private static final class Callback implements Comparable<Callback> {
     final Runnable action;
     final long period;
@@ -31,6 +31,8 @@ final class HostPeriodicCallbacks {
   private long nextOrder;
   private long loopStartTime;
 
+  public HostPeriodicCallbacks() {}
+
   static long periodNanos(double seconds) {
     if (!Double.isFinite(seconds) || seconds < 1e-9 || seconds >= Long.MAX_VALUE * 1e-9) {
       throw new IllegalArgumentException(
@@ -39,7 +41,7 @@ final class HostPeriodicCallbacks {
     return (long) (seconds * 1e9);
   }
 
-  void add(Runnable action, double periodSeconds, double offsetSeconds) {
+  public void add(Runnable action, double periodSeconds, double offsetSeconds) {
     long period = periodNanos(periodSeconds);
     if (!Double.isFinite(offsetSeconds) || Math.abs(offsetSeconds) >= Long.MAX_VALUE * 1e-9) {
       throw new IllegalArgumentException("Callback offset must be a finite nanosecond duration");
@@ -50,7 +52,7 @@ final class HostPeriodicCallbacks {
     callbacks.add(new Callback(Objects.requireNonNull(action), period, nextOrder++, deadline));
   }
 
-  void runDue() {
+  public void runDue() {
     long now = RobotController.getMonotonicTime();
     if (callbacks.isEmpty() || callbacks.peek().deadline > now) {
       return;
@@ -67,11 +69,11 @@ final class HostPeriodicCallbacks {
     }
   }
 
-  long getLoopStartTime() {
+  public long getLoopStartTime() {
     return loopStartTime;
   }
 
-  void clear() {
+  public void clear() {
     callbacks.clear();
   }
 }

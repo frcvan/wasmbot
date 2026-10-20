@@ -247,6 +247,30 @@ Open `http://localhost:8099/`, select teleop, and enable the robot in the simula
 
 Commands V2's scheduler watchdog uses the host's monotonic simulation clock instead of a HAL notifier. Due callbacks run at host tick boundaries or when watchdog expiry is queried/disabled; epoch diagnostics go to standard error. It cannot interrupt blocked JavaScript or detect wall-clock stalls while simulation time is frozen. The bundled `wasmSmoke` suite requires Commands V3, so use `wasmRun` for this V2-only example rather than installing conflicting commands vendordeps.
 
+### AdvantageKit live simulation
+
+AdvantageKit support activates only when the robot project already has a `vendordeps/*.json` entry declaring `org.littletonrobotics.akit:akit-java`. Wasmbot does not install the vendordep, add the AK runtime dependency, or enable AK support for a Maven dependency alone. The verified baseline is AdvantageKit `27.0.0-alpha-6` with WPILib `2027.0.0-alpha-7`.
+
+With that vendordep installed:
+
+- WASM-only `Logger` and `LoggedRobot` replacements use the host clock and nonblocking iterative lifecycle. Desktop robot classes retain the original implementations.
+- `Logger.recordMetadata`, `recordOutput`, and `processInputs` use upstream `LogTable` serialization. `NT4Publisher` publishes live values under `/AdvantageKit`, including typed arrays and packed structs. Receivers run synchronously on the host thread with independent snapshots; custom receivers must be host-safe and nonblocking.
+- The matching `akit-autolog` annotation processor is added to `main`, `wasm`, and `wasmTest`. Keep normal `@AutoLog` inputs and generated `*AutoLogged` classes; their generated serializers access fields directly and do not need blanket constructor/field reflection registration. The metadata scanner retains separate type-specific requirements for serialized values, including struct/protobuf fields and record accessors/constructors.
+- `@AutoLogOutput` fields and zero-argument getters are discovered by the upstream `AutoLogOutputManager` after `simulationInit()` and logged after each user cycle. Private members, nested robot objects, default keys, `{field}` key substitutions, and units retain AK behavior. Use `AutoLogOutputManager.addPackage(...)`/`addObject(...)` for additional packages/roots as on desktop.
+- Build-time bytecode scanning finds `@AutoLogOutput` members across the effective WASM classpath, including dependency JARs. It generates invocation metadata for annotated getters and field metadata for robot-object traversal, inherited members, key substitutions, and serialized output types. Production and smoke metadata are generated separately under `build/wasm/reflection/` by `generateWasmAutoLogOutputReflection` and `generateWasmSmokeAutoLogOutputReflection`; native-image builds include them without editing user-maintained configuration.
+- Timed loops coalesce missed deadlines. `setUseTiming(false)` runs one cycle per host tick, not a blocking fast-replay loop. Shutdown closes receivers; receiver failures propagate rather than being swallowed.
+
+File-backed WPILOG recording/replay, native socket receivers, URCL, console capture, and native hardware diagnostics are not supported. `Logger` rejects replay sources, file/native-socket receivers, URCL registration, and custom console capture sources explicitly. Stdout/stderr remain available through the host console. Select live simulation receivers instead of unconditionally constructing file/hardware-backed helpers.
+
+The [AdvantageKit example](examples/advantagekit) includes the vendordep and logs generated counter inputs, metadata, enabled state, and a pose through `NT4Publisher`, including private annotated fields/getters and a nested output with a template key and unit:
+
+```sh
+./gradlew publishToMavenLocal
+./gradlew -p examples/advantagekit wasmRun
+```
+
+Retained AdvantageKit-derived code is covered by [AdvantageKit-LICENSE](AdvantageKit-LICENSE), included under `licenses/` in the distributed source bundle.
+
 
 ## JavaScript host and telemetry
 

@@ -74,5 +74,8 @@
   "[gradle]": {
     "editor.defaultFormatter": "richardwillis.vscode-spotless-gradle"
   },
-  "java.compile.nullAnalysis.mode": "automatic"
+  "java.compile.nullAnalysis.mode": "automatic",
+  "git.ignoredRepositories": [
+    "akit/build"
+  ]
 }

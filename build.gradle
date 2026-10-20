@@ -21,6 +21,7 @@ repositories {
 dependencies {
     implementation localGroovy()
     implementation 'org.graalvm.buildtools:native-gradle-plugin:1.1.14'
+    implementation 'org.ow2.asm:asm:9.9.1'
 }
 
 gradlePlugin {
@@ -105,10 +106,12 @@ def bundleWasmLibrary = tasks.register('bundleWasmLibrary', Zip) {
     duplicatesStrategy = DuplicatesStrategy.FAIL
 
     from('src/runtime/java') { into 'runtime/java' }
+    from('src/runtime/advantagekit/java') { into 'advantagekit/java' }
     from('src/runtime/resources') { into 'runtime/resources' }
     from('src/smoke/java') { into 'tests/java' }
     from('shim') { into 'shim' }
     from('tools') { into 'tools' }
+    from('AdvantageKit-LICENSE') { into 'licenses' }
     from('WPILib-License.md') { into 'licenses' }
     from('akit/build/lite/static') { into 'web/advantagescope' }
     dependsOn(buildLite)
@@ -147,14 +150,14 @@ spotless {
     json {
         target fileTree(".") {
             include "**/*.json"
-            exclude "**/build/**", "**/build-*/**", ".wpilib/**"
+            exclude "**/build/**", "**/build-*/**", ".wpilib/**", "akit/.npm-cache/**"
         }
         gson().indentWithSpaces(2)
     }
     format "misc", {
         target fileTree(".") {
             include "**/*.md", "**/.gitignore"
-            exclude "**/build/**", "**/build-*/**"
+            exclude "**/build/**", "**/build-*/**", "akit/.npm-cache/**"
         }
         trimTrailingWhitespace()
         leadingTabsToSpaces(2)
