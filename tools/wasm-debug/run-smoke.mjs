@@ -89,8 +89,8 @@ const expected = {
         "-9223372036854775808",
         "9223372036854775807"
     ],
-    Raw: "00ff10",
-    EmptyStructs: ""
+    Raw: new Uint8Array([0x00, 0xff, 0x10]),
+    EmptyStructs: new Uint8Array()
 };
 for (const [key, value] of Object.entries(expected)) {
     assert.deepEqual(values[`/Telemetry/Review/${key}`], value, key);
@@ -100,10 +100,13 @@ function struct(x, y, rotation) {
     bytes.writeDoubleLE(x, 0);
     bytes.writeDoubleLE(y, 8);
     bytes.writeDoubleLE(rotation, 16);
-    return bytes.toString("hex");
+    return new Uint8Array(bytes);
 }
-assert.equal(values["/Telemetry/Review/Struct"], struct(3, 4, -1));
-assert.equal(values["/Telemetry/Review/Structs"], struct(1.25, -2.5, 0.5) + struct(3, 4, -1));
+assert.deepEqual(values["/Telemetry/Review/Struct"], struct(3, 4, -1));
+assert.deepEqual(
+    values["/Telemetry/Review/Structs"],
+    new Uint8Array([...struct(1.25, -2.5, 0.5), ...struct(3, 4, -1)])
+);
 function field(tag, value) {
     const bytes = Buffer.alloc(9);
     bytes[0] = tag;
@@ -118,7 +121,7 @@ const protobuf = Buffer.concat([
     Buffer.from([18, rotation.length]),
     rotation
 ]);
-assert.equal(values["/Telemetry/Review/Proto"], protobuf.toString("hex"));
+assert.deepEqual(values["/Telemetry/Review/Proto"], new Uint8Array(protobuf));
 const currentStructEvents = ntEvents.filter(
     (event) => event.name === "/Review/NTStructCurrent"
 );
@@ -283,6 +286,17 @@ ds.controllers = [
 ];
 await tick();
 globalThis.wasmbot.checkControllers(7);
+ds.controllers[0].name = "Renamed primary";
+await tick();
+globalThis.wasmbot.checkControllers(8);
+ds.controllers[0].axes = [-0.25, NaN, Infinity];
+await tick(2);
+globalThis.wasmbot.checkControllers(9);
+ds.controllers = ds.controllers.map((controller) => controller && ({
+    ...controller, axes: [...controller.axes], buttons: [...controller.buttons]
+}));
+await tick();
+globalThis.wasmbot.checkControllers(9);
 delete ds.controllers;
 ds.leftX = 0;
 ds.leftY = 0;

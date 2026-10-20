@@ -3,7 +3,6 @@ package org.teamvan.wasmbot;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import org.graalvm.webimage.api.JS;
@@ -19,14 +18,13 @@ import us.hebi.quickbuf.ProtoMessage;
 import us.hebi.quickbuf.ProtoSink;
 
 /**
- * Typed host telemetry under /Telemetry. Structs and protobufs retain the bridge's packed lowercase
- * hex encoding; struct arrays are a single packed buffer, as on NT4. Schemas and topic properties
- * are published separately from values. Unsafe JavaScript integers retain their decimal-string
- * representation rather than silently rounding.
+ * Typed host telemetry under /Telemetry. Structs, protobufs, and raw values publish byte snapshots;
+ * struct arrays are a single packed buffer, as on NT4. Schemas and topic properties are published
+ * separately from values. Unsafe JavaScript integers retain their decimal-string representation
+ * rather than silently rounding.
  */
 public final class JsTelemetry implements TelemetryBackend {
   private static final long MAX_SAFE_INTEGER = 9_007_199_254_740_991L;
-  private static final HexFormat HEX = HexFormat.of();
   private final Map<String, Entry> entries = new LinkedHashMap<>();
 
   /** Registers this backend before the first telemetry log. */
@@ -58,6 +56,7 @@ public final class JsTelemetry implements TelemetryBackend {
     private String type;
     private boolean closed;
     private ByteBuffer structBuffer;
+    private JsBytes rawBytes;
     private Struct<?> structSchema;
     private boolean structArray;
     private Protobuf<?, ?> protobuf;
@@ -119,7 +118,7 @@ public final class JsTelemetry implements TelemetryBackend {
       if (!prepareStruct(struct, false)) return;
       ByteBuffer buffer = structBuffer(struct.getSize());
       struct.pack(buffer, value);
-      put(HEX.formatHex(buffer.array(), 0, buffer.limit()), timestamp);
+      put(buffer.array(), 0, buffer.limit(), timestamp);
     }
 
     @Override
@@ -127,7 +126,7 @@ public final class JsTelemetry implements TelemetryBackend {
       if (!prepareStruct(struct, true)) return;
       ByteBuffer buffer = structBuffer(Math.multiplyExact(struct.getSize(), value.length));
       for (T element : value) struct.pack(buffer, element);
-      put(HEX.formatHex(buffer.array(), 0, buffer.limit()), timestamp);
+      put(buffer.array(), 0, buffer.limit(), timestamp);
     }
 
     @Override
@@ -161,7 +160,7 @@ public final class JsTelemetry implements TelemetryBackend {
       } catch (IOException e) {
         throw new IllegalStateException("Failed to serialize protobuf at " + path, e);
       }
-      put(HEX.formatHex(protobufBytes.array(), 0, size), timestamp);
+      put(protobufBytes.array(), 0, size, timestamp);
     }
 
     @Override
@@ -252,7 +251,7 @@ public final class JsTelemetry implements TelemetryBackend {
 
     @Override
     public void logRaw(byte[] value, String typeString, long timestamp) {
-      if (prepare(typeString)) put(HEX.formatHex(value), timestamp);
+      if (prepare(typeString)) put(value, 0, value.length, timestamp);
     }
 
     private ByteBuffer structBuffer(int size) {
@@ -270,10 +269,15 @@ public final class JsTelemetry implements TelemetryBackend {
     private void put(JSObject value, long timestamp) {
       putArray(owner, jsPath, micros(timestamp), value);
     }
+
+    private void put(byte[] value, int start, int length, long timestamp) {
+      if (rawBytes == null) rawBytes = new JsBytes();
+      rawBytes.put(owner, jsPath, micros(timestamp), value, start, length);
+    }
   }
 
   private static double micros(long timestamp) {
-    return (timestamp == 0 ? JsBridge.nowNanos() : (double) timestamp) / 1000;
+    return (double) timestamp / 1000;
   }
 
   private static boolean isSafeInteger(long value) {
@@ -298,20 +302,28 @@ public final class JsTelemetry implements TelemetryBackend {
   private static native void unpublish(JSObject owner, JSString path);
 
   @JS.Coerce
-  @JS("globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
+  @JS(
+      "globalThis.wasmbot.nt.put(owner, path,"
+          + " timestamp === 0 ? globalThis.wasmbot.nowNanos() / 1000 : timestamp, value);")
   private static native void putNumber(
       JSObject owner, JSString path, double timestamp, double value);
 
   @JS.Coerce
-  @JS("globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
+  @JS(
+      "globalThis.wasmbot.nt.put(owner, path,"
+          + " timestamp === 0 ? globalThis.wasmbot.nowNanos() / 1000 : timestamp, value);")
   private static native void putBoolean(
       JSObject owner, JSString path, double timestamp, boolean value);
 
-  @JS("globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
+  @JS(
+      "globalThis.wasmbot.nt.put(owner, path,"
+          + " timestamp === 0 ? globalThis.wasmbot.nowNanos() / 1000 : timestamp, value);")
   private static native void putString(
       JSObject owner, JSString path, double timestamp, JSString value);
 
-  @JS("globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
+  @JS(
+      "globalThis.wasmbot.nt.put(owner, path,"
+          + " timestamp === 0 ? globalThis.wasmbot.nowNanos() / 1000 : timestamp, value);")
   private static native void putArray(
       JSObject owner, JSString path, double timestamp, JSObject value);
 

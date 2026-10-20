@@ -29,44 +29,40 @@ public final class WasmRuntime {
   private static final int[] released = new int[CONTROLLER_PORTS];
   private static final boolean[] connected = new boolean[CONTROLLER_PORTS];
   private static final String[] names = {"Browser keyboard", "", "", "", "", ""};
+  private static JSObject driverStationState;
+  private static boolean refreshRequired = true;
   private static volatile LongSupplier clock = () -> (long) JsBridge.nowNanos();
 
   private WasmRuntime() {}
 
-  /** Pulls the current DriverStation snapshot from JavaScript. */
+  /** Samples the host once and copies only changed normalized values into Java. */
   public static void refresh() {
-    JSObject ds = JsBridge.driverStation();
-    setEnabled(enabled(ds));
-    setRobotMode(RobotMode.fromInt(robotMode(ds)));
-    setAlliance(redAlliance(ds) ? Alliance.RED : Alliance.BLUE);
-    boolean hasControllers = hasControllers(ds);
+    if (driverStationState == null) driverStationState = createDriverStationState();
+    int changes = sampleDriverStation(driverStationState);
+    if (refreshRequired) changes = 0x7f;
+    if (changes == 0) return;
+    JSObject ds = driverStationState;
+    if ((changes & 0x40) != 0) {
+      setEnabled(enabled(ds));
+      setRobotMode(RobotMode.fromInt(robotMode(ds)));
+      setAlliance(redAlliance(ds) ? Alliance.RED : Alliance.BLUE);
+    }
     for (int port = 0; port < CONTROLLER_PORTS; port++) {
-      boolean legacy = !hasControllers && port == 0;
-      connected[port] = legacy || controllerConnected(ds, port);
-      axisCounts[port] = legacy ? 3 : controllerAxisCount(ds, port);
-      buttonCounts[port] = legacy ? 0 : controllerButtonCount(ds, port);
-      if (legacy) {
-        names[port] = "Browser keyboard";
-      } else if (!controllerNameEquals(ds, port, names[port])) {
-        names[port] = controllerName(ds, port);
-      }
+      if ((changes & (1 << port)) == 0) continue;
+      connected[port] = controllerConnected(ds, port);
+      axisCounts[port] = controllerAxisCount(ds, port);
+      buttonCounts[port] = controllerButtonCount(ds, port);
+      if (!controllerNameEquals(ds, port, names[port])) names[port] = controllerName(ds, port);
       for (int axis = 0; axis < CONTROLLER_AXES; axis++) {
-        axes[port][axis] =
-            legacy
-                ? switch (axis) {
-                  case 0 -> leftX(ds);
-                  case 1 -> leftY(ds);
-                  case 2 -> rightX(ds);
-                  default -> 0.0;
-                }
-                : controllerAxis(ds, port, axis);
+        axes[port][axis] = controllerAxis(ds, port, axis);
       }
-      int next = legacy ? 0 : controllerButtons(ds, port);
+      int next = controllerButtons(ds, port);
       pressed[port] |= ~buttons[port] & next;
       released[port] |= buttons[port] & ~next;
       buttons[port] = next;
     }
     dsAttached = true;
+    refreshRequired = false;
   }
 
   /**
@@ -83,11 +79,13 @@ public final class WasmRuntime {
    */
   public static void setEnabled(boolean enabled) {
     WasmRuntime.enabled = enabled;
+    refreshRequired = true;
   }
 
   /** Sets the selected robot mode independently of the enabled flag. */
   public static void setRobotMode(RobotMode robotMode) {
     WasmRuntime.robotMode = robotMode;
+    refreshRequired = true;
   }
 
   /** Returns the selected mode, including UNKNOWN when the host omits it. */
@@ -100,6 +98,7 @@ public final class WasmRuntime {
    */
   public static void setAlliance(Alliance alliance) {
     WasmRuntime.alliance = alliance;
+    refreshRequired = true;
   }
 
   /**
@@ -111,6 +110,7 @@ public final class WasmRuntime {
     axes[0][0] = leftX;
     axes[0][1] = leftY;
     axes[0][2] = rightX;
+    refreshRequired = true;
   }
 
   /**
@@ -226,65 +226,103 @@ public final class WasmRuntime {
     return BATTERY_VOLTS;
   }
 
+  @JS(
+      """
+      return {
+        enabled: undefined, mode: 0, red: false,
+        controllers: Array.from({length: 6}, () => ({
+          connected: false, name: '', axisCount: 0, buttonCount: 0,
+          axes: [0, 0, 0, 0, 0, 0], buttons: 0
+        }))
+      };
+      """)
+  private static native JSObject createDriverStationState();
+
   @JS.Coerce
-  @JS("return ds.enabled === true;")
+  @JS(
+      """
+      const ds = globalThis.wasmbot.driverStation();
+      const enabled = ds.enabled === true;
+      const mode = ds.mode === 'autonomous' ? 1 : ds.mode === 'teleop' ? 2 : ds.mode === 'utility' ? 3 : 0;
+      const red = typeof ds.alliance === 'string' && ds.alliance.toLowerCase() === 'red';
+      let changes = state.enabled !== enabled || state.mode !== mode || state.red !== red ? 64 : 0;
+      state.enabled = enabled;
+      state.mode = mode;
+      state.red = red;
+      const hasControllers = Array.isArray(ds.controllers);
+      for (let port = 0; port < 6; port++) {
+        const previous = state.controllers[port];
+        const legacy = !hasControllers && port === 0;
+        const controller = hasControllers ? ds.controllers[port] : null;
+        const connected = legacy || controller != null;
+        const name = legacy ? 'Browser keyboard' : typeof controller?.name === 'string' ? controller.name : '';
+        const axes = controller?.axes;
+        const buttons = controller?.buttons;
+        const axisCount = legacy ? 3 : Array.isArray(axes) ? Math.min(6, axes.length) : 0;
+        const buttonCount = legacy ? 0 : Array.isArray(buttons) ? Math.min(26, buttons.length) : 0;
+        let bits = 0;
+        for (let i = 0; i < buttonCount; i++) if (buttons[i] === true) bits |= 1 << i;
+        let changed = previous.connected !== connected || previous.name !== name
+          || previous.axisCount !== axisCount || previous.buttonCount !== buttonCount || previous.buttons !== bits;
+        for (let axis = 0; axis < 6; axis++) {
+          let value = 0;
+          if (legacy) {
+            const raw = axis === 0 ? ds.leftX : axis === 1 ? ds.leftY : axis === 2 ? ds.rightX : 0;
+            if (typeof raw === 'number') value = raw;
+          } else if (axis < axisCount && typeof axes[axis] === 'number' && Number.isFinite(axes[axis])) {
+            value = axes[axis];
+          }
+          if (!Object.is(previous.axes[axis], value)) changed = true;
+          previous.axes[axis] = value;
+        }
+        if (changed) changes |= 1 << port;
+        previous.connected = connected;
+        previous.name = name;
+        previous.axisCount = axisCount;
+        previous.buttonCount = buttonCount;
+        previous.buttons = bits;
+      }
+      return changes;
+      """)
+  private static native int sampleDriverStation(JSObject state);
+
+  @JS.Coerce
+  @JS("return ds.enabled;")
   private static native boolean enabled(JSObject ds);
 
   @JS.Coerce
-  @JS(
-      "switch (ds.mode) { case 'autonomous': return 1; case 'teleop': return 2; case 'utility': return 3; default: return 0; }")
+  @JS("return ds.mode;")
   private static native int robotMode(JSObject ds);
 
   @JS.Coerce
-  @JS("return typeof ds.alliance === 'string' && ds.alliance.toLowerCase() === 'red';")
+  @JS("return ds.red;")
   private static native boolean redAlliance(JSObject ds);
 
   @JS.Coerce
-  @JS("return typeof ds.leftX === 'number' ? ds.leftX : 0;")
-  private static native double leftX(JSObject ds);
-
-  @JS.Coerce
-  @JS("return typeof ds.leftY === 'number' ? ds.leftY : 0;")
-  private static native double leftY(JSObject ds);
-
-  @JS.Coerce
-  @JS("return typeof ds.rightX === 'number' ? ds.rightX : 0;")
-  private static native double rightX(JSObject ds);
-
-  @JS.Coerce
-  @JS("return Array.isArray(ds.controllers);")
-  private static native boolean hasControllers(JSObject ds);
-
-  @JS.Coerce
-  @JS("return Array.isArray(ds.controllers) && ds.controllers[port] != null;")
+  @JS("return ds.controllers[port].connected;")
   private static native boolean controllerConnected(JSObject ds, int port);
 
   @JS.Coerce
-  @JS(
-      "const c = ds.controllers?.[port]; return Array.isArray(c?.axes) ? Math.min(6, c.axes.length) : 0;")
+  @JS("return ds.controllers[port].axisCount;")
   private static native int controllerAxisCount(JSObject ds, int port);
 
   @JS.Coerce
-  @JS(
-      "const c = ds.controllers?.[port]; return Array.isArray(c?.buttons) ? Math.min(26, c.buttons.length) : 0;")
+  @JS("return ds.controllers[port].buttonCount;")
   private static native int controllerButtonCount(JSObject ds, int port);
 
   @JS.Coerce
-  @JS(
-      "const value = ds.controllers?.[port]?.axes?.[axis]; return typeof value === 'number' && Number.isFinite(value) ? value : 0;")
+  @JS("return ds.controllers[port].axes[axis];")
   private static native double controllerAxis(JSObject ds, int port, int axis);
 
   @JS.Coerce
-  @JS(
-      "const b = ds.controllers?.[port]?.buttons; let value = 0; if (Array.isArray(b)) { for (let i = 0; i < Math.min(26, b.length); i++) { if (b[i] === true) value |= 1 << i; } } return value;")
+  @JS("return ds.controllers[port].buttons;")
   private static native int controllerButtons(JSObject ds, int port);
 
   @JS.Coerce
-  @JS("const name = ds.controllers?.[port]?.name; return typeof name === 'string' ? name : '';")
+  @JS("return ds.controllers[port].name;")
   private static native String controllerName(JSObject ds, int port);
 
   @JS.Coerce
-  @JS(
-      "const name = ds.controllers?.[port]?.name; return (typeof name === 'string' ? name : '') === previous;")
+  @JS("return ds.controllers[port].name === previous;")
   private static native boolean controllerNameEquals(JSObject ds, int port, String previous);
 }

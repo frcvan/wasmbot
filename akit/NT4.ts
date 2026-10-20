@@ -63,22 +63,6 @@ type HostEvent = {
     value?: unknown;
 };
 
-function normalizeHostValue(type: string, value: unknown): unknown {
-    // Java's bridge carries packed binary samples as hex strings. NT4 consumers receive
-    // bytes for every raw-backed declared type, including structs and schema descriptors.
-    if (
-        (typeIndices[type] ?? 5) === 5 &&
-        typeof value === "string" &&
-        value.length % 2 === 0 &&
-        /^[0-9a-fA-F]*$/.test(value)
-    ) {
-        const bytes = new Uint8Array(value.length / 2);
-        for (let i = 0; i < bytes.length; i++)
-            bytes[i] = Number.parseInt(value.slice(i * 2, i * 2 + 2), 16);
-        return bytes;
-    }
-    return value;
-}
 type Host = {
     snapshot(): HostTopic[];
     listen(listener: (event: HostEvent) => void): () => void;
@@ -402,7 +386,7 @@ export class NT4_Client {
                 this.enqueue(
                     topic.name,
                     topic.timestamp,
-                    normalizeHostValue(topic.type, topic.value)
+                    topic.value
                 );
         }
         this.schedule();
@@ -444,7 +428,7 @@ export class NT4_Client {
             this.enqueue(
                 name,
                 event.timestamp!,
-                normalizeHostValue(event.topic.type, event.value)
+                event.value
             );
         }
     }

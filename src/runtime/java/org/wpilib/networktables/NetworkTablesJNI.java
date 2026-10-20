@@ -2,13 +2,11 @@ package org.wpilib.networktables;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;
-import java.util.HexFormat;
 import java.util.Map;
-import java.util.Objects;
 import org.graalvm.webimage.api.JS;
 import org.graalvm.webimage.api.JSObject;
 import org.graalvm.webimage.api.JSString;
-import org.teamvan.wasmbot.JsBridge;
+import org.teamvan.wasmbot.JsBytes;
 
 /**
  * In-process NT JNI boundary. SDK tables, typed/generic publishers, entries, and struct
@@ -17,7 +15,6 @@ import org.teamvan.wasmbot.JsBridge;
  * here.
  */
 public final class NetworkTablesJNI {
-  private static final HexFormat HEX = HexFormat.of();
   private static final Map<String, Integer> topicHandles = new HashMap<>();
   private static final Map<Integer, String> topicNames = new HashMap<>();
   private static final Map<Integer, JSString> topics = new HashMap<>();
@@ -31,12 +28,18 @@ public final class NetworkTablesJNI {
     final JSObject owner = newOwner();
     final boolean writable;
     boolean published;
+    private JsBytes rawBytes;
 
     Publication(int topic, int type, String typeString, boolean writable) {
       this.topic = topic;
       this.type = type;
       this.typeString = JSString.of(typeString);
       this.writable = writable;
+    }
+
+    JsBytes rawBytes() {
+      if (rawBytes == null) rawBytes = new JsBytes();
+      return rawBytes;
     }
   }
 
@@ -187,7 +190,7 @@ public final class NetworkTablesJNI {
   }
 
   private static double timestamp(long time) {
-    return (time == 0 ? JsBridge.nowNanos() : (double) time) / 1000;
+    return (double) time / 1000;
   }
 
   private static boolean canSetDefault(int entry) {
@@ -236,32 +239,18 @@ public final class NetworkTablesJNI {
   public static boolean setRaw(int entry, long time, byte[] value, int start, int len) {
     Publication publication = writable(entry, NetworkTableType.RAW);
     if (publication == null) return false;
-    Objects.checkFromIndexSize(start, len, value.length);
-    return putString(
-        publication.owner,
-        path(entry),
-        timestamp(time),
-        JSString.of(HEX.formatHex(value, start, start + len)));
+    return publication
+        .rawBytes()
+        .put(publication.owner, path(entry), timestamp(time), value, start, len);
   }
 
-  /** Receives the SDK StructBuffer's packed bytes without copying its reusable direct buffer. */
+  /** Publishes the SDK StructBuffer's absolute packed range without changing its state. */
   public static boolean setRaw(int entry, long time, ByteBuffer value, int start, int len) {
     Publication publication = writable(entry, NetworkTableType.RAW);
     if (publication == null) return false;
-    Objects.checkFromIndexSize(start, len, value.limit());
-    String packed;
-    if (value.hasArray()) {
-      int offset = value.arrayOffset() + start;
-      packed = HEX.formatHex(value.array(), offset, offset + len);
-    } else {
-      StringBuilder hex = new StringBuilder(len * 2);
-      for (int i = start; i < start + len; i++) {
-        byte element = value.get(i);
-        hex.append(HEX.toHighHexDigit(element)).append(HEX.toLowHexDigit(element));
-      }
-      packed = hex.toString();
-    }
-    return putString(publication.owner, path(entry), timestamp(time), JSString.of(packed));
+    return publication
+        .rawBytes()
+        .put(publication.owner, path(entry), timestamp(time), value, start, len);
   }
 
   public static boolean setBooleanArray(int entry, long time, boolean[] value) {
@@ -364,7 +353,7 @@ public final class NetworkTablesJNI {
     JSString path = JSString.of("/.schema/" + name);
     JSObject owner = newOwner();
     publishValue(owner, path, JSString.of(type), JSString.of("{\"retained\":true}"));
-    putString(owner, path, 0, JSString.of(HEX.formatHex(schema)));
+    new JsBytes().putSchema(owner, path, schema);
   }
 
   public static void unpublish(int pubentry) {
@@ -388,22 +377,30 @@ public final class NetworkTablesJNI {
       JSObject owner, JSString path, JSString type, JSString properties);
 
   @JS.Coerce
-  @JS("return globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
+  @JS(
+      "return globalThis.wasmbot.nt.put(owner, path,"
+          + " timestamp === 0 ? globalThis.wasmbot.nowNanos() / 1000 : timestamp, value);")
   private static native boolean putNumber(
       JSObject owner, JSString path, double timestamp, double value);
 
   @JS.Coerce
-  @JS("return globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
+  @JS(
+      "return globalThis.wasmbot.nt.put(owner, path,"
+          + " timestamp === 0 ? globalThis.wasmbot.nowNanos() / 1000 : timestamp, value);")
   private static native boolean putBoolean(
       JSObject owner, JSString path, double timestamp, boolean value);
 
   @JS.Coerce
-  @JS("return globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
+  @JS(
+      "return globalThis.wasmbot.nt.put(owner, path,"
+          + " timestamp === 0 ? globalThis.wasmbot.nowNanos() / 1000 : timestamp, value);")
   private static native boolean putString(
       JSObject owner, JSString path, double timestamp, JSString value);
 
   @JS.Coerce
-  @JS("return globalThis.wasmbot.nt.put(owner, path, timestamp, value);")
+  @JS(
+      "return globalThis.wasmbot.nt.put(owner, path,"
+          + " timestamp === 0 ? globalThis.wasmbot.nowNanos() / 1000 : timestamp, value);")
   private static native boolean putArray(
       JSObject owner, JSString path, double timestamp, JSObject value);
 

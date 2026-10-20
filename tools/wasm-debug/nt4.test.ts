@@ -50,6 +50,29 @@ function delivered() {
     vi.advanceTimersByTime(10);
 }
 
+test("listener mutations affect nested events but preserve active dispatch", () => {
+    const { host } = setup();
+    const owner = {};
+    host.publish(owner, "/value", "double");
+    const seen: string[] = [];
+    const added = (event: { value?: unknown }) => seen.push(`added:${event.value}`);
+    let stopSecond: () => unknown;
+    host.listen((event) => {
+        seen.push(`first:${event.value}`);
+        if (event.value === 1) {
+            stopSecond();
+            host.listen(added);
+            host.put(owner, "/value", 2, 2);
+        }
+    });
+    stopSecond = host.listen((event) => seen.push(`second:${event.value}`));
+    host.put(owner, "/value", 1, 1);
+    expect(seen).toEqual(["first:1", "first:2", "added:2", "second:1"]);
+    seen.length = 0;
+    host.put(owner, "/value", 3, 3);
+    expect(seen).toEqual(["first:3", "added:3"]);
+});
+
 test("exact/prefix subscriptions discover cached values; topics-only never emits samples", async () => {
     const { host, client, announced, data } = setup();
     const owner = {};
@@ -94,6 +117,62 @@ test("sendAll preserves samples; latest coalesces; overlapping subscriptions do 
     client.clearAllSubscriptions();
     await delivered();
     expect(data.map((sample) => sample.value)).toEqual([2, 3, 4]);
+});
+
+test("binary sendAll and cached replay preserve snapshots of a reused publisher buffer", async () => {
+    const { host, client, data } = setup();
+    const owner = {};
+    const bytes = new Uint8Array([0x00, 0xff, 0x10]);
+    host.publish(owner, "/binary", "raw");
+    host.put(owner, "/binary", 10, bytes);
+    bytes.set([0x01, 0x80, 0x20]);
+    client.subscribe(["/binary"], false, true, 0);
+    client.connect();
+    await Promise.resolve();
+    host.put(owner, "/binary", 20, bytes);
+    bytes.set([0x02, 0x7f, 0x30]);
+    host.put(owner, "/binary", 30, bytes);
+    bytes.fill(0xee);
+    expect(data).toEqual([]);
+    await delivered();
+    const expected = [
+        { name: "/binary", timestamp: 10, value: new Uint8Array([0x00, 0xff, 0x10]) },
+        { name: "/binary", timestamp: 20, value: new Uint8Array([0x01, 0x80, 0x20]) },
+        { name: "/binary", timestamp: 30, value: new Uint8Array([0x02, 0x7f, 0x30]) }
+    ];
+    expect(data).toEqual(expected);
+    for (const sample of data) {
+        expect(sample.value).toBeInstanceOf(Uint8Array);
+        expect(sample.value).not.toBe(bytes);
+    }
+    client.disconnect();
+    client.connect();
+    await Promise.resolve();
+    bytes.fill(0xdd);
+    await delivered();
+    expect(data).toEqual([...expected, expected[2]]);
+});
+
+test("raw-backed strings pass through unchanged for cached and live samples", async () => {
+    const { host, client, data } = setup();
+    const owner = {};
+    const types = ["raw", "struct:Pose2d", "struct:Pose2d[]", "protobuf", "structschema"];
+    for (const type of types) {
+        host.publish(owner, `/${type}`, type);
+        host.put(owner, `/${type}`, 10, "00ff10");
+    }
+    client.subscribe(["/"], true, true, 0);
+    client.connect();
+    await Promise.resolve();
+    await delivered();
+    const cached = types.map((type) => ({ name: `/${type}`, timestamp: 10, value: "00ff10" }));
+    expect(data).toEqual(cached);
+    for (const type of types) host.put(owner, `/${type}`, 20, "");
+    await delivered();
+    expect(data).toEqual([
+        ...cached,
+        ...types.map((type) => ({ name: `/${type}`, timestamp: 20, value: "" }))
+    ]);
 });
 
 test("client publishing, property deletion, retention and multiple owners share host state", async () => {

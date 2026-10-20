@@ -2,7 +2,7 @@
 
 `wasmbot` builds ordinary FRC WPILib Commands V2 and Commands V3 robot programs with GraalVM Web Image. The runtime package is **`org.teamvan.wasmbot`**. The same `Robot` class and its `robotPeriodic()` method run on desktop/hardware and under WASM; there is no separate simulation lifecycle adapter.
 
-The plugin owns the runtime/shadows, JSPI continuation engine, native build configuration, generic browser telemetry viewer, and native smoke suite. It contains no project-specific drivetrain acceptance tests or Pose-channel assumptions. Struct/protobuf publishing retains its existing hex wire format.
+The plugin owns the runtime/shadows, JSPI continuation engine, native build configuration, generic browser telemetry viewer, and native smoke suite. It contains no project-specific drivetrain acceptance tests or Pose-channel assumptions. Struct/protobuf publishing delivers raw `Uint8Array` snapshots to the host and frontend.
 
 ## LLM usage
 
@@ -229,7 +229,7 @@ private final DoublePublisher directCounter = NetworkTableInstance.getDefault()
     .getDoubleTopic("/Example/DirectCounter").publish();
 ```
 
-The WASM NetworkTables Java surface supports default-instance tables, typed/generic publication of primitive scalars and arrays, raw/struct data, topic properties, schemas, and double-entry reads. Publisher lifetime, defaults, and explicit timestamps are preserved; `SEND_ALL`, `KEEP_DUPLICATES`, and periodic options are accepted by the immediate in-process transport. Struct publishing retains WPILib's interfaces and serialization, transports packed values as lowercase hex, and publishes retained nested schemas under `/.schema/struct:<type>`. Native listeners, subscription queues, extra instances, and network client/server startup remain unsupported. Desktop/hardware builds use the ordinary SDK implementation.
+The WASM NetworkTables Java surface supports default-instance tables, typed/generic publication of primitive scalars and arrays, raw/struct data, topic properties, schemas, and double-entry reads. Publisher lifetime, defaults, and explicit timestamps are preserved; `SEND_ALL`, `KEEP_DUPLICATES`, and periodic options are accepted by the immediate in-process transport. Struct publishing retains WPILib's interfaces and serialization, transports packed values as `Uint8Array` snapshots, and publishes retained nested schemas under `/.schema/struct:<type>`. Native listeners, subscription queues, extra instances, and network client/server startup remain unsupported. Desktop/hardware builds use the ordinary SDK implementation.
 
 ### Commands V2 example
 
@@ -308,7 +308,13 @@ networkTables.install(); // adds nt, ntGet, and ntPut to globalThis.wasmbot
 
 After importing the image and awaiting `GraalVM.run()`, call `wasmbot.start()`. Advance the host clock by 20 ms per default tick and **await the `wasmbot.tick()` Promise before starting another tick**. The supplied viewer serializes ticks and reports startup/runtime failures. JSPI requires neither `SharedArrayBuffer` nor cross-origin isolation.
 
-Telemetry registry paths publish under `/Telemetry`; explicit NT publisher paths are unchanged. Declared types, JSON properties, schemas, and sample timestamps are transported. Primitive scalars and arrays are native JS values; raw bytes, little-endian structs, and protobuf bytes use lowercase hex. A struct array is one concatenated packed hex string with type `struct:<type>[]`, including an empty string for an empty array. Longs outside JS's safe-integer range remain exact decimal strings, including in arrays. Java nanosecond timestamps convert to NT4 microseconds once; timestamp values inside payloads retain their original units.
+Driver-station refresh samples and normalizes the host snapshot in one JS bridge call. Unchanged state stays cached in Java; only changed header fields or controller ports cross back into Java. Hosts may mutate the same snapshot/arrays in place or return new objects with equal contents; no revision field or explicit notification is required. Button edges remain latched until consumed, and disconnect still releases held buttons. No axis tolerance or extra deadband is applied.
+
+Telemetry registry paths publish under `/Telemetry`; explicit NT publisher paths are unchanged. Declared types, JSON properties, schemas, and sample timestamps are transported. Primitive scalars and arrays are native JS values; raw bytes, little-endian structs, protobuf bytes, and binary schemas are `Uint8Array` snapshots. A struct array is one concatenated packed byte array with type `struct:<type>[]`, including a zero-length `Uint8Array` for an empty array. Longs outside JS's safe-integer range remain exact decimal strings, including in arrays. Java nanosecond timestamps convert to NT4 microseconds once; timestamp values inside payloads retain their original units.
+
+Telemetry and NT publications remain synchronous: reads and listeners see accepted writes immediately, including duplicate samples. Default publication timestamps resolve the host clock inside the existing JS write call rather than making a separate clock crossing. Explicit timestamps retain nanosecond-to-microsecond conversion; schema publications retain timestamp zero.
+
+GraalVM 25.4's WASM backend does not provide primitive-array-to-typed-array coercion. The internal binary bridge packs two bytes per UTF-16 code unit, then reconstructs bytes before publication; this carrier never reaches NT consumers. This removes hex formatting/parsing but is not zero-copy. Packing scratch storage is reused, and the host copies accepted samples so later Java buffer reuse cannot corrupt retained values or queued NT4 samples. Absolute `ByteBuffer` ranges preserve position, limit, byte order, and array offsets, including direct and read-only buffers.
 
 The generic HID bridge supplies each controller port independently. Axis indices 0–5 are left X, left Y, right X, right Y, left trigger, and right trigger. Sticks use `[-1, 1]`; triggers use `[0, 1]`. Buttons are zero-based booleans using WPILib's `Gamepad.Button` indices (up to 26); the browser standard mapping and keyboard supply indices 0–14. Array lengths determine availability masks. D-pad buttons 11–14 also provide POV zero. Press/release edges latch independently until read and are shared across wrappers of the same port; disconnect clears inputs and latches releases. Names and connection state follow the snapshot. Touchpads, rumble, and LED outputs are not emulated.
 
@@ -327,10 +333,12 @@ The frontend and Wasm robot must share the same `globalThis.wasmbot.nt` host (an
 - `connect()` asynchronously connects to the installed host; `disconnect()` cancels pending delivery and removes that client's publishers. Reconnecting restores its subscriptions and publications.
 - Exact/prefix subscriptions replay cached samples; topics-only subscriptions announce without values. `sendAll` preserves samples within each delivery period; otherwise only the latest sample is delivered. Overlapping subscriptions merge without duplicate delivery, using the shortest requested period.
 - Topic announcements, removals, and property changes use the usual callbacks. Property values of `null` delete keys. Last-publisher removal deletes a topic unless retained or persistent. Both flags preserve topics only for this host's lifetime; there is no disk persistence.
-- Client publications write back through the same store read by `wasmbot.ntGet`. Conflicting publication types and older timestamps cannot overwrite current values. The shared host retains its local value representation; the NT4 adapter converts packed hex for raw-backed declared types into byte arrays for AdvantageScope.
+- Client publications write back through the same store read by `wasmbot.ntGet`. Conflicting publication types and older timestamps cannot overwrite current values. The host and NT4 adapter share the same native value representation: packed binary samples are already byte arrays, with no hex decoding or string reinterpretation in the adapter.
 - Server time uses the simulated clock in microseconds; client time uses epoch microseconds. Server time is `null` while disconnected; in-process network latency is zero. Java's explicit NT timestamps are nanoseconds and are converted at the bridge.
 
 Host transport methods are `snapshot()`, `getTopic(name)`, `listen(callback)` (returns an unsubscribe function), `publish(owner, name, type, properties)`, `unpublish(owner, name)`, `setProperties(name, update)`, and `put(owner, name, timestampUs, value)`. Topics expose a monotonically increasing value `revision` and `lastPublisher`, allowing tunables to distinguish external writes from acknowledgements. Listener events have `kind` (`announce`, `unannounce`, `properties`, or `value`) and `topic`; value events also have `timestamp` and `value`. `owner` identifies an individual publisher; clients must share the transport rather than wrap or overwrite the robot hooks.
+
+Listener registrations use a cached dispatch snapshot rather than copying listeners on every event. Adding/removing a listener does not change an event already being dispatched; nested and subsequent events use the updated registrations.
 
 Run the deterministic adapter regression suite with:
 

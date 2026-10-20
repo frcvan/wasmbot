@@ -2,9 +2,10 @@
 export function createNetworkTables(nowNanos) {
   const topics = new Map();
   const listeners = new Set();
+  let listenerSnapshot = [];
   let nextId = 1;
   const emit = (event) => {
-    for (const listener of [...listeners]) listener(event);
+    for (const listener of listenerSnapshot) listener(event);
   };
   function removeUnused(topic) {
     if (topic.publishers.size || topic.properties.retained || topic.properties.persistent) return;
@@ -43,8 +44,15 @@ export function createNetworkTables(nowNanos) {
     snapshot: () => [...topics.values()],
     getTopic: (name) => topics.get(name),
     listen(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
+      if (!listeners.has(listener)) {
+        listeners.add(listener);
+        listenerSnapshot = [...listeners];
+      }
+      return () => {
+        const removed = listeners.delete(listener);
+        if (removed) listenerSnapshot = [...listeners];
+        return removed;
+      };
     },
     publish,
     unpublish,

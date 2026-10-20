@@ -185,6 +185,16 @@ final class ControllerSmoke {
       near(primary.getAxis(Gamepad.Axis.RIGHT_X), 0.4);
       near(primary.getAxis(Gamepad.Axis.LEFT_TRIGGER), 0.6);
       require(primary.getBackButton(), "NI construction must not remap Gamepad buttons");
+    } else if (phase == 8) {
+      require(hid.getName().equals("Renamed primary"), "name-only changes refresh identity");
+      near(hid.getRawAxis(0), 0.2);
+      require(!primary.getFaceDownButtonPressed(), "unchanged buttons do not relatch edges");
+    } else if (phase == 9) {
+      near(hid.getRawAxis(0), -0.25);
+      near(hid.getRawAxis(1), 0);
+      near(hid.getRawAxis(2), 0);
+      require(hid.getAxesMaximumIndex() == 3, "axis-only resize refreshes capabilities");
+      require(hid.getName().equals("Renamed primary"), "axis updates preserve identity");
     } else {
       throw new AssertionError("Unknown controller smoke phase " + phase);
     }
