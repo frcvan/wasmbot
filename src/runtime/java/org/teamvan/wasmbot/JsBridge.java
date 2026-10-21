@@ -12,8 +12,9 @@ import org.graalvm.webimage.api.JSValue;
  *
  * <ul>
  *   <li>{@code nowNanos(): number} monotonic time in nanoseconds
- *   <li>{@code driverStation(): {enabled, alliance, leftX, leftY, rightX}} alliance is {@code
- *       "red"} or {@code "blue"}
+ *   <li>{@code driverStation(): {enabled, mode, alliance, opMode, opModeName, controllers}}
+ *       alliance is {@code "red"} or {@code "blue"}
+ *   <li>{@code setOpModes(json)} optional simulator hook receiving the published opmode list
  *   <li>{@code ntGet(path): any} current NetworkTables value, or {@code undefined}
  *   <li>{@code ntPut(path, value)} publish a telemetry value
  * </ul>
@@ -44,6 +45,17 @@ public final class JsBridge {
 
   @JS("return globalThis.wasmbot.ntGet(path);")
   private static native JSValue ntGet(JSString path);
+
+  /**
+   * Publishes the registered opmode list to the browser driver station. Hosts without a simulator
+   * panel simply omit {@code wasmbot.setOpModes}.
+   *
+   * @param json JSON array of {@code {id, mode, name, group, description, textColor,
+   *     backgroundColor}} objects
+   */
+  @JS.Coerce
+  @JS("globalThis.wasmbot.setOpModes?.(json);")
+  public static native void setOpModes(String json);
 
   /**
    * Publishes one numeric telemetry value.

@@ -134,7 +134,8 @@ Input sampling and output publication should likewise stay in this shared robot 
 - Construction and `simulationInit()` happen once. Driver-station connection callbacks, disabled transitions, periodic hooks, and `simulationPeriodic()` follow the SDK ordering. Exceptions propagate; failed expirations are not replayed at the same host time.
 - Configured main-loop periods and `addPeriodic(...)` callbacks use the host's monotonic clock. Only due callbacks execute. A period shorter than the host interval is quantized to that interval; missed expirations coalesce instead of replaying a burst.
 - `endCompetition()`/`close()` stop subsequent callbacks. `getLoopStartTime()` uses the host clock.
-- The host selects iterative robot mode independently of enable state: `unknown`, `teleop`, `autonomous`, or `utility`. Omitted or unrecognized mode remains UNKNOWN and uses disabled iterative callbacks, even when enabled. No opmode ID/name or classpath discovery is provided; `OpModeRobot.nonePeriodic()` still runs when no opmode is selected.
+- The host selects iterative robot mode independently of enable state: `unknown`, `teleop`, `autonomous`, or `utility`. Omitted or unrecognized mode remains UNKNOWN and uses disabled iterative callbacks, even when enabled.
+- `OpModeRobot.addOpMode(...)` registers factories or classes for the browser selector. `publishOpModes()` sends the list to the simulator, and `RobotState.getOpMode()`/`getOpModeId()` report the active choice. Selected opmodes are constructed on selection, run `disabledPeriodic()` while disabled, `start()`/`periodic()` while enabled, and `end()`/`close()` on disable or mode switch. `nonePeriodic()` runs when no opmode is selected. Annotated class scanning remains best-effort because native images only retain classes and resources that survived analysis; explicit `addOpMode` registration is the reliable path.
 - Native watchdog diagnostics and physical HID outputs are unavailable and fail explicitly if invoked. A custom blocking `RobotBase` subclass needs a host-driven WASM implementation rather than a native loop.
 
 Choose simulated IO using your existing `RobotBase.isSimulation()`/`isReal()` selection. These shadows do not emulate every vendor or HAL API. Avoid hardware/JNI initialization in static fields that run before your simulation selection.
@@ -185,9 +186,25 @@ Open `http://localhost:8099/`. On Windows, `.\gradlew.bat` is equivalent to `./g
 
 The staged browser assets always use canonical `wasm.js`/`wasm.js.wasm` names, even for a native image named `counter`. Serve the staged directory over HTTP, not `file://`.
 
-The browser begins disabled in unknown mode. Open the **Robot simulator** panel, select **teleop** or **autonomous**, then check **Enable robot**. The AdvantageScope frontend displays telemetry without assuming a drivetrain or Pose format; the simulator itself supplies time and driver-station inputs. Losing focus or hiding the page disables the robot and clears held keyboard keys without changing the selected mode. Typing in text fields does not drive the robot.
+The browser begins disabled in unknown mode. Open the **Robot simulator** panel, select **Teleop**, **Auto**, or **Utility**, choose a published opmode, then switch **Robot enabled** on. The AdvantageScope frontend displays telemetry without assuming a drivetrain or Pose format; the simulator itself supplies time and driver-station inputs. Losing focus or hiding the page disables the robot and clears held keyboard keys without changing the selected mode. Typing in text fields does not drive the robot.
 
-Standard browser gamepads use their browser indices as robot ports (0–5). Press a controller button if the browser has not exposed it yet. A physical gamepad takes precedence on port zero; otherwise port zero uses the keyboard. Non-standard browser mappings are reported as unsupported rather than guessed. The panel lists the active inputs and provides an alliance selector.
+Register opmodes in the robot constructor and publish them once. The example project does this in [`Robot.java`](examples/commands-v3/src/main/java/example/Robot.java):
+
+```java
+addOpMode(
+    RobotMode.TELEOPERATED,
+    "Scheduler Counter",
+    "Examples",
+    "Runs the normal counter loop under an explicitly selected opmode.",
+    () -> new CounterOpMode(this));
+publishOpModes();
+```
+
+The selector only shows opmodes for the current robot mode, and selects the first matching opmode automatically until you choose **None**. `None` keeps the normal framework lifecycle and calls `OpModeRobot.nonePeriodic()`.
+
+**Configure controls** opens a dialog for keyboard bindings (every axis, trigger, and gamepad button), the keyboard Driver Station port, connected gamepad port assignments, stick deadzone, Y-axis inversion, and the alliance override key. Bindings are captured by pressing a key, saved in browser storage, and applied immediately. Standard browser gamepads use their mapped ports; a gamepad takes precedence when it shares the keyboard port. Press a controller button if the browser has not exposed it yet. Non-standard browser mappings are reported as unsupported rather than guessed.
+
+Default keyboard bindings (all can be changed in **Configure controls**):
 
 | Keyboard | Gamepad input |
 | --- | --- |
@@ -297,7 +314,8 @@ networkTables.install(); // adds nt, ntGet, and ntPut to globalThis.wasmbot
 | Field on `globalThis.wasmbot` | Contract |
 | ---------------------------- | -------- |
 | `nowNanos()` | Monotonic simulated time, in nanoseconds. |
-| `driverStation()` | `{enabled, mode, alliance, controllers}`; mode is `"unknown"`, `"teleop"`, `"autonomous"`, or `"utility"` and is independent of enabled state. Alliance is `"red"` or `"blue"`. `controllers` contains up to six entries: `null` for disconnected, or `{name, axes, buttons}` as described below. |
+| `driverStation()` | `{enabled, mode, alliance, opMode, opModeName, controllers}`; mode is `"unknown"`, `"teleop"`, `"autonomous"`, or `"utility"` and is independent of enabled state. Alliance is `"red"` or `"blue"`. `opMode` is the published opmode ID and `opModeName` is its name, or `0`/`""` for no selection. `controllers` contains up to six entries: `null` for disconnected, or `{name, axes, buttons}` as described below. |
+| `setOpModes(json)` | Optional host hook. Java calls it from `publishOpModes()` with a JSON array of `{id, mode, name, group, description, textColor, backgroundColor}`. The supplied simulator uses it to populate the opmode selector. |
 | `ntGet(path)` | Current host value, or `undefined` if no value exists. |
 | `ntPut(path, value, type?, timestampUs?)` | Publishes a JavaScript value; type defaults to inference and timestamp to the host clock. |
 | `nt` | Shared in-process topic transport installed by `networkTables.install()`. |
@@ -322,7 +340,7 @@ The generic HID bridge supplies each controller port independently. Axis indices
 
 The host-backed SDK Tunables backend is installed before robot construction and updated by the normal iterative lifecycle. Robust tunables receive requests at `/Tunables/<path>/tune` and acknowledge at `/value`; `Selectable` keeps its standard defaults/options and selected-child protocol. Double-entry writes such as AdvantageKit's `/Tuning/...` inputs are independent of this SDK protocol. There is no native listener thread.
 
-Custom hosts that omit `controllers` may still provide `{enabled, mode, alliance, leftX, leftY, rightX}`. That snapshot supplies only three axes on port zero, with no buttons or other connected ports. Omitting mode preserves UNKNOWN rather than implicitly selecting teleop.
+Custom hosts that omit `controllers` may still provide `{enabled, mode, alliance, leftX, leftY, rightX}`. That snapshot supplies only three axes on port zero, with no buttons or other connected ports. Omitting mode preserves UNKNOWN rather than implicitly selecting teleop. Omitting `opMode`/`opModeName`, or omitting `setOpModes`, simply leaves the opmode selector empty and preserves `nonePeriodic()` behavior.
 
 ### AdvantageScope-compatible NT4 client
 

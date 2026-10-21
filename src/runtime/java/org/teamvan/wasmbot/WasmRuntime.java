@@ -18,6 +18,8 @@ public final class WasmRuntime {
   private static volatile RobotMode robotMode = RobotMode.UNKNOWN;
   private static volatile boolean dsAttached;
   private static volatile Alliance alliance = Alliance.BLUE;
+  private static volatile long opModeId;
+  private static volatile String opModeName = "";
   private static final int CONTROLLER_PORTS = 6;
   private static final int CONTROLLER_AXES = 6;
   private static final int CONTROLLER_BUTTONS = 26;
@@ -39,13 +41,16 @@ public final class WasmRuntime {
   public static void refresh() {
     if (driverStationState == null) driverStationState = createDriverStationState();
     int changes = sampleDriverStation(driverStationState);
-    if (refreshRequired) changes = 0x7f;
+    if (refreshRequired) changes = 0xff;
     if (changes == 0) return;
     JSObject ds = driverStationState;
     if ((changes & 0x40) != 0) {
       setEnabled(enabled(ds));
       setRobotMode(RobotMode.fromInt(robotMode(ds)));
       setAlliance(redAlliance(ds) ? Alliance.RED : Alliance.BLUE);
+    }
+    if ((changes & 0x80) != 0) {
+      setOpMode(opMode(ds), opModeName(ds));
     }
     for (int port = 0; port < CONTROLLER_PORTS; port++) {
       if ((changes & (1 << port)) == 0) continue;
@@ -99,6 +104,33 @@ public final class WasmRuntime {
   public static void setAlliance(Alliance alliance) {
     WasmRuntime.alliance = alliance;
     refreshRequired = true;
+  }
+
+  /**
+   * Selects an opmode without going through the browser snapshot. Desktop and native smoke tests
+   * use this; the browser updates it through {@code wasmbot.driverStation()}.
+   *
+   * @param id opmode ID, or {@code 0} for no selection
+   * @param name opmode name, or an empty string for no selection
+   */
+  public static void setOpMode(long id, String name) {
+    opModeId = id;
+    opModeName = name == null ? "" : name;
+    refreshRequired = true;
+  }
+
+  /**
+   * @return the opmode selected in the browser, or {@code 0} when none is selected
+   */
+  public static long getOpModeId() {
+    return opModeId;
+  }
+
+  /**
+   * @return the selected opmode name, or an empty string when none is selected
+   */
+  public static String getOpModeName() {
+    return opModeName;
   }
 
   /**
@@ -229,7 +261,7 @@ public final class WasmRuntime {
   @JS(
       """
       return {
-        enabled: undefined, mode: 0, red: false,
+        enabled: undefined, mode: 0, red: false, opMode: 0, opModeName: '',
         controllers: Array.from({length: 6}, () => ({
           connected: false, name: '', axisCount: 0, buttonCount: 0,
           axes: [0, 0, 0, 0, 0, 0], buttons: 0
@@ -245,10 +277,15 @@ public final class WasmRuntime {
       const enabled = ds.enabled === true;
       const mode = ds.mode === 'autonomous' ? 1 : ds.mode === 'teleop' ? 2 : ds.mode === 'utility' ? 3 : 0;
       const red = typeof ds.alliance === 'string' && ds.alliance.toLowerCase() === 'red';
+      const opMode = Number.isSafeInteger(ds.opMode) && ds.opMode >= 0 ? ds.opMode : 0;
+      const opModeName = typeof ds.opModeName === 'string' ? ds.opModeName : '';
       let changes = state.enabled !== enabled || state.mode !== mode || state.red !== red ? 64 : 0;
+      if (state.opMode !== opMode || state.opModeName !== opModeName) changes |= 128;
       state.enabled = enabled;
       state.mode = mode;
       state.red = red;
+      state.opMode = opMode;
+      state.opModeName = opModeName;
       const hasControllers = Array.isArray(ds.controllers);
       for (let port = 0; port < 6; port++) {
         const previous = state.controllers[port];
@@ -297,6 +334,14 @@ public final class WasmRuntime {
   @JS.Coerce
   @JS("return ds.red;")
   private static native boolean redAlliance(JSObject ds);
+
+  @JS.Coerce
+  @JS("return ds.opMode;")
+  private static native long opMode(JSObject ds);
+
+  @JS.Coerce
+  @JS("return ds.opModeName;")
+  private static native String opModeName(JSObject ds);
 
   @JS.Coerce
   @JS("return ds.controllers[port].connected;")

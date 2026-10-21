@@ -43,6 +43,7 @@ public final class WasmSmoke {
     TimerSmoke.run();
     FrameworkSmoke.run();
     ModeSmoke.run();
+    OpModeSmoke.run();
     WatchdogSmoke.run();
     NetworkTablesSmoke.run();
     ControllerSmoke.run();
