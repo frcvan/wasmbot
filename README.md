@@ -54,7 +54,7 @@ The published plugin resolves from the `gradlePluginPortal()` repository that WP
 id 'org.teamvan.wasmbot' version '0.1.0'
 ```
 
-The implementation coordinate is `org.teamvan.wasmbot:wasmbot:0.1.0`, resolved through the `org.teamvan.wasmbot` Gradle plugin marker. Both are published to the Gradle Plugin Portal. The plugin ID replaces the old unqualified `wasmbot` ID; the `wasmbot { ... }` extension and runtime packages are unchanged.
+The implementation coordinate is `org.teamvan.wasmbot:wasmbot:0.1.0`, resolved through the `org.teamvan.wasmbot` Gradle plugin marker. Both are published to the Gradle Plugin Portal and Maven Central. The plugin ID replaces the old unqualified `wasmbot` ID; the `wasmbot { ... }` extension and runtime packages are unchanged.
 
 For local development, run `gradle check assemble publishToMavenLocal` from this standalone build with Gradle 9.4.1 and Java 25, then add `mavenLocal()` before `gradlePluginPortal()` in the consumer's `pluginManagement.repositories`. The [independent example](examples/commands-v3) uses this published-plugin path, not an included source build.
 
@@ -185,6 +185,8 @@ Open `http://localhost:8099/`. On Windows, `.\gradlew.bat` is equivalent to `./g
 | `advantagescope`     | Stages the bundled AdvantageScope Lite frontend at `build/wasm/site/`.                                                                                                                                                           |
 
 The staged browser assets always use canonical `wasm.js`/`wasm.js.wasm` names, even for a native image named `counter`. Serve the staged directory over HTTP, not `file://`.
+
+The bundled viewer is trimmed to what an FRC robot displays: the current FRC 3D field and the 2026 KitBot, the FRC 2D fields, and the standard joystick models. FTC assets, older season models, and AdvantageScope's own documentation site are not shipped, and the **Documentation** tabs load the hosted manual at [docs.advantagescope.org](https://docs.advantagescope.org). This keeps the published plugin JAR near 22 MB; see [PUBLISH.md](PUBLISH.md#release-size) for the Maven Central release-size budget.
 
 The browser begins disabled in unknown mode. Open the **Robot simulator** panel, select **Teleop**, **Auto**, or **Utility**, choose a published opmode, then switch **Robot enabled** on. The AdvantageScope frontend displays telemetry without assuming a drivetrain or Pose format; the simulator itself supplies time and driver-station inputs. Losing focus or hiding the page disables the robot and clears held keyboard keys without changing the selected mode. Typing in text fields does not drive the robot.
 

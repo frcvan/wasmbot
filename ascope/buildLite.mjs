@@ -15,7 +15,25 @@ const root = path.join(scriptDirectory, "build");
 const npmCache = path.join(scriptDirectory, ".npm-cache");
 const distribution = "LITE";
 const ASCOPE_COMMIT = "e28580467";
-const skipDocs = process.env.WASMBOT_SKIP_DOCS === "true";
+
+// This frontend is shipped inside the plugin JAR, which Maven Central charges against a monthly
+// release-size quota shared with every other release that month. AdvantageScope is pinned to
+// ASCOPE_COMMIT, so the bundled asset set is fixed; keep only what an FRC robot viewer displays and
+// drop the rest (FTC fields/robots, older season models, and the AdvantageScope documentation site).
+// Update this list together with ASCOPE_COMMIT.
+const retainedBundledAssets = new Set([
+    "Field2d_2026FRCFieldV2",
+    "Field2d_FRCEvergreen",
+    "Field3d_2026FRCFieldV2",
+    "Joystick_LogitechF310V3",
+    "Joystick_PS4ControllerV3",
+    "Joystick_XboxControllerBlueV3",
+    "Joystick_XboxControllerWhiteV3",
+    "Robot_2026FRCKitBotV2"
+]);
+
+// The bundled documentation site is gone, so documentation tabs load the hosted manual.
+const hostedDocumentationUrl = "https://docs.advantagescope.org";
 
 function log(message) {
     console.log(`[buildLite] ${new Date().toISOString()} ${message}`);
@@ -92,7 +110,7 @@ function isAdvantageScopeRepository(destination) {
     }
 }
 
-log(`starting ${distribution} build${skipDocs ? " without docs" : ""}`);
+log(`starting ${distribution} build`);
 log(`AdvantageScope source directory: ${root}`);
 cloneAscope(root);
 
@@ -112,22 +130,6 @@ function installDeps() {
         root,
         { YOUTUBE_DL_SKIP_DOWNLOAD: "true" }
     );
-    if (!skipDocs) {
-        log("installing documentation dependencies");
-        run(
-            "npm",
-            [
-                "install",
-                "--cache",
-                npmCache,
-                "--prefer-offline",
-                "--no-audit",
-                "--no-fund",
-                "--ignore-scripts"
-            ],
-            path.join(root, "docs")
-        );
-    }
 }
 
 if (!fs.existsSync(path.join(root, "node_modules", ".bin", "tsc"))) {
@@ -143,6 +145,24 @@ run("node", ["tesseractLangDownload.mjs"], root);
 log("bundling Lite assets");
 run("node", ["bundleLiteAssets.mjs"], root);
 
+/** Deletes every bundled asset that the shipped viewer does not need. */
+function pruneBundledAssets(assetRoot) {
+    if (!fs.existsSync(assetRoot)) return;
+    const removed = [];
+    for (const entry of fs.readdirSync(assetRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory() || retainedBundledAssets.has(entry.name))
+            continue;
+        fs.rmSync(path.join(assetRoot, entry.name), {
+            recursive: true,
+            force: true
+        });
+        removed.push(entry.name);
+    }
+    if (removed.length > 0) {
+        log(`removed unshipped assets: ${removed.sort().join(", ")}`);
+    }
+}
+
 function patchHubHtml(filePath) {
     const script = `<script type="module" src="../wasm/sim.js"></script>\n`;
     const target = `<script type="module" src="../bundles/hub.js"></script>`;
@@ -152,6 +172,24 @@ function patchHubHtml(filePath) {
         throw new Error(`Could not find the hub bundle script in ${filePath}`);
     }
     fs.writeFileSync(filePath, contents.replace(target, script + target));
+}
+
+/** Points the satellite window's documentation iframe at the hosted manual. */
+function patchSatelliteHtml(filePath) {
+    const contents = fs.readFileSync(filePath, "utf8");
+    if (contents.includes(hostedDocumentationUrl)) return;
+
+    const target = `<iframe src="../docs/build/index.html"></iframe>`;
+    if (!contents.includes(target)) {
+        throw new Error(`Could not find the documentation iframe in ${filePath}`);
+    }
+    fs.writeFileSync(
+        filePath,
+        contents.replace(
+            target,
+            `<iframe src="${hostedDocumentationUrl}"></iframe>`
+        )
+    );
 }
 
 function patchNT4(newSource) {
@@ -198,6 +236,77 @@ function patchAssetLoader(source) {
     patched = patched.replaceAll(
         "currentPath + `assets/${encodeURIComponent(name)}/",
         "currentPath + `${assetBasePath}/${encodeURIComponent(name)}/"
+    );
+    return patched;
+}
+
+// The bundled documentation site is gone, so the "Documentation" tab must load the hosted manual.
+// That frame is cross-origin, which makes hash and scroll access throw, so those accesses are
+// guarded while same-origin frames keep the original behavior.
+function patchDocumentationRenderer(source) {
+    if (source.includes("// BEGIN WASMBOT HOSTED DOCUMENTATION PATCH")) return source;
+
+    function replaceOnce(text, before, after) {
+        const index = text.indexOf(before);
+        if (index === -1) {
+            throw new Error(
+                `Could not find DocumentationRenderer anchor: ${before}`
+            );
+        }
+        return text.slice(0, index) + after + text.slice(index + before.length);
+    }
+
+    let patched = replaceOnce(
+        source,
+        `      this.IFRAME.src = "../docs/build/index.html";`,
+        `      // BEGIN WASMBOT HOSTED DOCUMENTATION PATCH
+      this.IFRAME.src = "${hostedDocumentationUrl}";
+      // END WASMBOT HOSTED DOCUMENTATION PATCH`
+    );
+    patched = replaceOnce(
+        patched,
+        `  saveState(): unknown {
+    return this.IFRAME.contentWindow?.location.hash;
+  }`,
+        `  /** The hosted documentation frame is cross-origin; same-origin frames behave as before. */
+  private frameIsSameOrigin(): boolean {
+    try {
+      return this.IFRAME.contentWindow?.location.origin === window.location.origin;
+    } catch {
+      return false;
+    }
+  }
+
+  saveState(): unknown {
+    return this.frameIsSameOrigin()
+      ? this.IFRAME.contentWindow?.location.hash
+      : null;
+  }`
+    );
+    patched = replaceOnce(
+        patched,
+        `      if (this.loaded) {
+        this.IFRAME.contentWindow!.location.hash = state;`,
+        `      if (this.loaded && this.frameIsSameOrigin()) {
+        this.IFRAME.contentWindow!.location.hash = state;`
+    );
+    patched = replaceOnce(
+        patched,
+        `    if (this.stateQueue !== null && this.loaded) {
+      this.IFRAME.contentWindow!.location.hash = this.stateQueue;
+      this.stateQueue = null;
+    }`,
+        `    if (this.stateQueue !== null && this.loaded) {
+      if (this.frameIsSameOrigin()) {
+        this.IFRAME.contentWindow!.location.hash = this.stateQueue;
+      }
+      this.stateQueue = null;
+    }`
+    );
+    patched = replaceOnce(
+        patched,
+        `    if (this.loaded && this.IFRAME.contentWindow !== null) {`,
+        `    if (this.loaded && this.frameIsSameOrigin()) {`
     );
     return patched;
 }
@@ -284,6 +393,28 @@ log(
         : "Emscripten version handling already patched"
 );
 
+const documentationRendererPath = path.join(
+    root,
+    "src",
+    "shared",
+    "renderers",
+    "DocumentationRenderer.ts"
+);
+const originalDocumentationRenderer = fs.readFileSync(
+    documentationRendererPath,
+    "utf8"
+);
+const patchedDocumentationRenderer = patchDocumentationRenderer(
+    originalDocumentationRenderer
+);
+if (patchedDocumentationRenderer !== originalDocumentationRenderer)
+    fs.writeFileSync(documentationRendererPath, patchedDocumentationRenderer);
+log(
+    patchedDocumentationRenderer !== originalDocumentationRenderer
+        ? "patched AdvantageScope documentation renderer"
+        : "documentation renderer already loads the hosted manual"
+);
+
 patchNT4(fs.readFileSync(path.join(scriptDirectory, "NT4.ts"), "utf8"));
 log("installed Wasmbot NT4 adapter");
 
@@ -292,40 +423,45 @@ try {
     log("building TypeScript bundles");
     run("npm", ["run", "compile"], root);
     run("npm", ["run", "wasm:compile"], root);
-    if (skipDocs) {
-        log("skipping embedded documentation build");
-    } else {
-        log("building embedded documentation");
-        run("npm", ["run", "docs:build-embed"], root);
-    }
 } finally {
     log("restoring temporary AdvantageScope source patches");
     if (patchedAssetLoader !== originalAssetLoader)
         fs.writeFileSync(assetLoaderPath, originalAssetLoader);
     if (patchedWasmCompile !== originalWasmCompile)
         fs.writeFileSync(wasmCompilePath, originalWasmCompile);
+    if (patchedDocumentationRenderer !== originalDocumentationRenderer)
+        fs.writeFileSync(
+            documentationRendererPath,
+            originalDocumentationRenderer
+        );
 }
 
-// Copy files that are part of the static Lite distribution.
+// Assemble Wasmbot's copy of the static Lite distribution. AdvantageScope's own `lite/static` is
+// left complete so its asset downloader keeps its on-disk cache between builds.
 const staticRoot = path.join(root, "lite", "static");
-log(`assembling static output at ${staticRoot}`);
-copyDirectory(path.join(root, "www"), path.join(staticRoot, "www"));
-if (skipDocs) {
-    fs.rmSync(path.join(staticRoot, "docs"), { recursive: true, force: true });
-} else {
-    copyDirectory(
-        path.join(root, "docs", "build"),
-        path.join(staticRoot, "docs")
-    );
+const bundleRoot = path.join(root, "lite", "wasmbot");
+log(`assembling static output at ${bundleRoot}`);
+fs.rmSync(bundleRoot, { recursive: true, force: true });
+fs.mkdirSync(bundleRoot, { recursive: true });
+for (const entry of fs.readdirSync(staticRoot)) {
+    // The embedded AdvantageScope documentation site is an upstream user manual rather than part
+    // of the plugin; the "Documentation" tab loads the hosted manual instead.
+    if (entry === "docs" || entry === "www") continue;
+    fs.cpSync(path.join(staticRoot, entry), path.join(bundleRoot, entry), {
+        recursive: true
+    });
 }
-patchHubHtml(path.join(staticRoot, "www", "hub.html"));
+copyDirectory(path.join(root, "www"), path.join(bundleRoot, "www"));
+pruneBundledAssets(path.join(bundleRoot, "bundledAssets"));
+patchHubHtml(path.join(bundleRoot, "www", "hub.html"));
+patchSatelliteHtml(path.join(bundleRoot, "www", "satellite.html"));
 
 // The server normally creates this response dynamically. An extensionless file lets
 // the same response be served by a plain static file server as well.
-const assetRoot = path.join(staticRoot, "bundledAssets");
+const assetRoot = path.join(bundleRoot, "bundledAssets");
 const assetIndex = createAssetIndex(assetRoot);
-fs.writeFileSync(path.join(staticRoot, "assets"), JSON.stringify(assetIndex));
+fs.writeFileSync(path.join(bundleRoot, "assets"), JSON.stringify(assetIndex));
 
 log(
-    `generated AdvantageScope ${distribution} in ${path.relative(root, staticRoot)}`
+    `generated trimmed AdvantageScope ${distribution} in ${path.relative(root, bundleRoot)}`
 );

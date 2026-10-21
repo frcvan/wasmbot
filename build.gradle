@@ -1,8 +1,13 @@
+import com.vanniktech.maven.publish.GradlePlugin
+import com.vanniktech.maven.publish.JavadocJar
+import com.vanniktech.maven.publish.SourcesJar
+
 plugins {
     id 'groovy'
     id 'java-gradle-plugin'
     id "com.diffplug.spotless" version "8.6.0"
     id 'com.gradle.plugin-publish' version '2.2.1'
+    id 'com.vanniktech.maven.publish' version '0.37.0'
 }
 
 group = 'org.teamvan.wasmbot'
@@ -45,8 +50,9 @@ tasks.matching { it.name == 'javadocJar' }.configureEach {
     from(tasks.named('groovydoc'))
 }
 
-// The Plugin Portal supplies the plugin marker and Javadoc/sources jars; only POM metadata is
-// configured here. Publishing itself is handled by publishPlugins.
+// Javadoc and sources jars are produced by java-gradle-plugin and the Gradle plugin publishing
+// plugin; only POM metadata is configured here. Publishing itself is handled by publishPlugins
+// (Gradle Plugin Portal) and publishAndReleaseToMavenCentral (Maven Central).
 publishing {
     publications.withType(MavenPublication).configureEach {
         pom {
@@ -77,21 +83,26 @@ publishing {
     }
 }
 
+// Publish the same plugin artifacts to Maven Central in addition to the Gradle Plugin Portal.
+mavenPublishing {
+    configure(new GradlePlugin(new JavadocJar.None(), new SourcesJar.Sources()))
+    publishToMavenCentral()
+    // Tagged releases require signing; local development publications do not.
+    if (providers.gradleProperty('releaseVersion').isPresent()) {
+        signAllPublications()
+    }
+}
+
 // Runtime sources are deliberately not part of this build's Java source sets:
 // the consuming robot compiles them against its own WPILib and vendor versions.
 def buildLite = tasks.register('buildLite', Exec) {
     group = 'WASM'
-    description = 'Builds the bundled AdvantageScope Lite frontend. Use -PskipDocs=true to omit docs.'
+    description = 'Builds the trimmed AdvantageScope Lite frontend bundled in the plugin JAR.'
     workingDir(projectDir)
     commandLine('node', 'ascope/buildLite.mjs')
     inputs.file(layout.projectDirectory.file('ascope/buildLite.mjs'))
     inputs.file(layout.projectDirectory.file('ascope/NT4.ts'))
-    def skipDocs = providers.gradleProperty('skipDocs').map { it.toBoolean() }.orElse(false)
-    inputs.property('skipDocs', skipDocs)
-    doFirst {
-        environment('WASMBOT_SKIP_DOCS', skipDocs.get().toString())
-    }
-    outputs.dir('ascope/build/lite/static')
+    outputs.dir('ascope/build/lite/wasmbot')
 }
 
 def bundleWasmLibrary = tasks.register('bundleWasmLibrary', Zip) {
@@ -110,13 +121,33 @@ def bundleWasmLibrary = tasks.register('bundleWasmLibrary', Zip) {
     from('tools') { into 'tools' }
     from('AdvantageKit-LICENSE') { into 'licenses' }
     from('WPILib-License.md') { into 'licenses' }
-    from('ascope/build/lite/static') { into 'web/advantagescope' }
+    from('ascope/build/lite/wasmbot') { into 'web/advantagescope' }
     dependsOn(buildLite)
 }
 
 tasks.named('processResources') {
     from(bundleWasmLibrary.flatMap { it.archiveFile }) {
         into 'org/teamvan/wasmbot/plugin'
+    }
+}
+
+// Maven Central enforces a monthly release-size quota shared by every release published that month.
+// The bundled frontend dominates this JAR, so fail a release build that regresses its size instead
+// of silently eating the quota; see PUBLISH.md.
+def maxPluginJarBytes = 30L * 1024 * 1024
+tasks.named('jar') {
+    doLast {
+        long size = archiveFile.get().asFile.length()
+        String sizeMb = String.format('%.1f', size / 1024 / 1024)
+        if (size > maxPluginJarBytes) {
+            String message = "Plugin JAR is ${sizeMb} MB; release artifacts must stay under 30 MB."
+            if (providers.gradleProperty('releaseVersion').isPresent()) {
+                throw new GradleException(message)
+            }
+            logger.warn(message)
+        } else {
+            logger.lifecycle("Plugin JAR size: ${sizeMb} MB")
+        }
     }
 }
 
