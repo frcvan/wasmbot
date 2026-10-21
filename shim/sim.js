@@ -288,7 +288,7 @@ style.textContent = `
         right: 12px;
         bottom: 12px;
         z-index: 10000;
-        width: min(390px, calc(100vw - 24px));
+        max-width: min(390px, calc(100vw - 24px));
         max-height: calc(100vh - 24px);
         display: flex;
         flex-direction: column;
@@ -308,13 +308,17 @@ style.textContent = `
     .wb-header {
         display: flex;
         align-items: center;
-        justify-content: space-between;
+        justify-content: flex-end;
         gap: 10px;
         padding: 12px 12px 11px;
         border-bottom: 2px solid var(--wb-silver);
         background: var(--wb-main);
         color: #fff;
+        cursor: pointer;
     }
+    .wb-root.is-collapsed { cursor: pointer; }
+    .wb-root.is-collapsed .wb-header { border-bottom: 0; }
+    .wb-header button, .wb-header input, .wb-header select { cursor: pointer; }
     .wb-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
     .wb-mark {
         display: grid;
@@ -330,7 +334,7 @@ style.textContent = `
     }
     .wb-title { font-size: 15px; font-weight: 900; line-height: 1.15; letter-spacing: 0.01em; }
     .wb-subtitle { margin-top: 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.82; }
-    .wb-header-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+    .wb-header-actions { display: flex; align-items: center; gap: 8px; flex: none; justify-content: flex-end; width: 100%; }
     .wb-status {
         display: inline-flex;
         align-items: center;
@@ -345,6 +349,7 @@ style.textContent = `
         letter-spacing: 0.04em;
         text-transform: uppercase;
         white-space: nowrap;
+        width: 100%;
     }
     .wb-status::before {
         content: "";
@@ -498,7 +503,7 @@ style.textContent = `
     .wb-ports { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
     .wb-port {
         display: grid;
-        grid-template-columns: 22px minmax(0, 1fr) auto;
+        grid-template-columns: minmax(22px, auto) minmax(0, 1fr) auto;
         align-items: center;
         gap: 7px;
         padding: 5px 7px;
@@ -509,7 +514,7 @@ style.textContent = `
         font-size: 11px;
     }
     .wb-port.is-connected { border-color: var(--wb-silver); background: #fff; color: var(--wb-ink); }
-    .wb-port-index { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 3px; background: var(--wb-silver); color: #fff; font-size: 10px; font-weight: 900; }
+    .wb-port-index { display: grid; place-items: center; min-width: 22px; height: 22px; padding: 0 4px; border-radius: 3px; background: var(--wb-silver); color: #fff; font-size: 10px; font-weight: 900; }
     .wb-port.is-connected .wb-port-index { background: var(--wb-main); }
     .wb-port-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
     .wb-port-tag { font-size: 9px; font-weight: 800; letter-spacing: 0.05em; text-transform: uppercase; }
@@ -663,13 +668,15 @@ panel.className = "wb-root";
 panel.setAttribute("aria-label", "Robot simulator");
 panel.innerHTML = `
     <header class="wb-header">
+    <!--
         <div class="wb-brand">
-            <!--<span class="wb-mark" aria-hidden="true">V</span>-->
+            <!--<span class="wb-mark" aria-hidden="true">V</span>
             <div>
                 <h2 class="wb-title">Robot Simulator</h2>
                 <p class="wb-subtitle">Team V.A.N. · FRC 12148</p>
             </div>
         </div>
+    -->
         <div class="wb-header-actions">
             <span class="wb-status" id="status" data-state="loading" role="status" aria-live="polite">Loading robot…</span>
             <button class="wb-icon-button" type="button" data-action="collapse" aria-label="Collapse robot simulator" aria-expanded="true">−</button>
@@ -759,23 +766,22 @@ const portsList = panel.querySelector('[data-role="ports"]');
 const help = panel.querySelector('[data-role="help"]');
 const controlsBody = dialog.querySelector('[data-role="controls-body"]');
 
-const portRows = [];
 let lastPortKey = "";
-for (let port = 0; port < PORT_COUNT; port++) {
+
+function createPortRow(indexText, nameText, tagText, connected) {
     const row = document.createElement("li");
-    row.className = "wb-port";
+    row.className = connected ? "wb-port is-connected" : "wb-port";
     const index = document.createElement("span");
     index.className = "wb-port-index";
-    index.textContent = String(port);
+    index.textContent = indexText;
     const name = document.createElement("span");
     name.className = "wb-port-name";
-    name.textContent = "Disconnected";
+    name.textContent = nameText;
     const tag = document.createElement("span");
     tag.className = "wb-port-tag";
-    tag.textContent = "—";
+    tag.textContent = tagText;
     row.append(index, name, tag);
-    portsList.append(row);
-    portRows.push({ row, name, tag });
+    return row;
 }
 
 function setStatus(text, state) {
@@ -792,9 +798,10 @@ function updateEnabledUi() {
     const enabled = enable.checked;
     driverStation.enabled = enabled;
     enabledHint.textContent = enabled
-        ? `Enabled in ${modeValue === "unknown" ? "no mode" : labelFor(modeValue)} mode`
+        ? `Enabled ${modeValue === "unknown" ? "" : "in " + labelFor(modeValue) + " mode"}`
         : "Select a mode, then enable";
-    if (ready) setStatus(enabled ? "Enabled" : "Running", "running");
+    if (ready)
+        setStatus(enabled ? "Robot Enabled" : "Simulation Running", "running");
 }
 
 function renderModes() {
@@ -828,16 +835,9 @@ function applyControls() {
 }
 
 function updateHelp() {
-    const allianceKeys = controls.allianceKey
-        ? `<kbd>${escapeHtml(keyLabel(controls.allianceKey))}</kbd>`
-        : "no key";
-    const port = controls.keyboardEnabled
-        ? `Keyboard: port ${controls.keyboardPort}.`
-        : "Keyboard: disabled.";
-    help.innerHTML =
-        `${port} Gamepads use their browser index as a port unless remapped. ` +
-        `Hold ${allianceKeys} for the red alliance. ` +
-        "Keys are ignored while typing or while the controls dialog is open; losing focus disables the robot.";
+    help.innerHTML = `
+        <a href="https://github.com/frcvan/wasmbot" target="_blank"><strong>wasmBot</strong></a>: Web simulator by <a href="https://www.teamvan.org" target="_blank"><strong>Team V.A.N. · FRC 12148</strong></a>
+    `;
 }
 
 function connectedGamepads() {
@@ -880,8 +880,6 @@ function renderOpModes() {
     noneOption.value = "0";
     if (modeValue === "unknown") {
         noneOption.textContent = "None - use the mode lifecycle";
-        opModeSelect.parentElement.hidden = true;
-        opModeSelect.parentElement.classList.add("wb-hidden");
     } else {
         noneOption.textContent = "Select a robot mode first";
         opModeSelect.parentElement.hidden = false;
@@ -921,10 +919,16 @@ function renderOpModes() {
     if (modeValue === "unknown") {
         opModeHint.textContent =
             "Choose Teleop, Auto, or Utility to see published opmodes.";
+        opModeSelect.parentElement.hidden = true;
+        opModeSelect.parentElement.classList.add("wb-hidden");
     } else if (matches.length === 0) {
         opModeHint.textContent = `No ${labelFor(modeValue).toLowerCase()} opmodes published.`;
+        opModeSelect.parentElement.hidden = true;
+        opModeSelect.parentElement.classList.add("wb-hidden");
     } else {
         opModeHint.textContent = `${matches.length} ${labelFor(modeValue).toLowerCase()} opmode${matches.length === 1 ? "" : "s"} published.`;
+        opModeSelect.parentElement.hidden = false;
+        opModeSelect.parentElement.classList.remove("wb-hidden");
     }
 
     const selected = matches.find((opMode) => opMode.id === selectedOpModeId);
@@ -961,15 +965,43 @@ function renderPorts(names, keyboardPort) {
     const key = `${keyboardPort}|${names.join("|")}`;
     if (key === lastPortKey) return;
     lastPortKey = key;
+
+    const rows = [];
     for (let port = 0; port < PORT_COUNT; port++) {
-        const row = portRows[port];
         const name = names[port] || "Disconnected";
-        const isKeyboard = name === "Keyboard" && keyboardPort === port;
-        row.name.textContent = name;
-        row.tag.textContent =
-            name === "Disconnected" ? "—" : isKeyboard ? "Keyboard" : "Gamepad";
-        row.row.classList.toggle("is-connected", name !== "Disconnected");
+        if (name !== "Disconnected") {
+            const isKeyboard = name === "Keyboard" && keyboardPort === port;
+            rows.push(
+                createPortRow(
+                    String(port),
+                    name,
+                    isKeyboard ? "Keyboard" : "Gamepad",
+                    true
+                )
+            );
+            continue;
+        }
+
+        // Collapse a contiguous run of disconnected ports into a single row.
+        let end = port;
+        while (
+            end + 1 < PORT_COUNT &&
+            (names[end + 1] || "Disconnected") === "Disconnected"
+        ) {
+            end++;
+        }
+        const count = end - port + 1;
+        rows.push(
+            createPortRow(
+                count === 1 ? String(port) : `${port}–${end}`,
+                "Disconnected",
+                count === 1 ? "—" : `${count} ports`,
+                false
+            )
+        );
+        port = end;
     }
+    portsList.replaceChildren(...rows);
 }
 
 function controllerAxes(controller) {
@@ -1146,19 +1178,33 @@ opModeSelect.addEventListener("change", () => {
     }
 });
 
+function setCollapsed(collapsed) {
+    panel.classList.toggle("is-collapsed", collapsed);
+    const button = panel.querySelector('button[data-action="collapse"]');
+    button.textContent = collapsed ? "+" : "−";
+    button.setAttribute("aria-expanded", String(!collapsed));
+    button.setAttribute(
+        "aria-label",
+        collapsed ? "Expand robot simulator" : "Collapse robot simulator"
+    );
+}
+
 panel.addEventListener("click", (event) => {
     const action = event.target.closest("button[data-action]")?.dataset.action;
-    if (action === "collapse") {
-        const collapsed = panel.classList.toggle("is-collapsed");
-        const button = event.target.closest("button[data-action]");
-        button.textContent = collapsed ? "+" : "−";
-        button.setAttribute("aria-expanded", String(!collapsed));
-        button.setAttribute(
-            "aria-label",
-            collapsed ? "Expand robot simulator" : "Collapse robot simulator"
-        );
-    } else if (action === "controls") {
+    if (action === "controls") {
         openControls();
+        return;
+    }
+    if (action === "collapse") {
+        setCollapsed(!panel.classList.contains("is-collapsed"));
+        return;
+    }
+    // Collapsed: the whole widget is a single expand target.
+    // Expanded: the header is the collapse target.
+    if (panel.classList.contains("is-collapsed")) {
+        setCollapsed(false);
+    } else if (event.target.closest(".wb-header")) {
+        setCollapsed(true);
     }
 });
 
@@ -1407,7 +1453,7 @@ try {
     hooks.onInstallHooks.forEach((hook) => hook());
     ready = true;
     enable.disabled = false;
-    setStatus("Running", "running");
+    setStatus("Simulation Running", "running");
     renderOpModes();
     updateEnabledUi();
     readDriverStation();
@@ -1436,9 +1482,9 @@ try {
             clearInterval(timer);
             disable();
             enable.disabled = true;
-            setError(`Robot stopped: ${errorText(error)}`);
-            setStatus("Stopped", "error");
-            console.error("[wasmbot] Robot stopped:", errorText(error));
+            setError(`Simulation stopped: ${errorText(error)}`);
+            setStatus("Simulation Stopped", "error");
+            console.error("[wasmbot] Simulation stopped:", errorText(error));
         } finally {
             ticking = false;
         }
@@ -1447,7 +1493,7 @@ try {
     ready = false;
     disable();
     enable.disabled = true;
-    setError(`Robot failed to start: ${errorText(error)}`);
-    setStatus("Stopped", "error");
-    console.error("[wasmbot] Robot failed to start:", errorText(error));
+    setError(`Simulation failed to start: ${errorText(error)}`);
+    setStatus("Simulation Failed", "error");
+    console.error("[wasmbot] Simulation failed to start:", errorText(error));
 }
