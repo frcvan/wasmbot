@@ -320,18 +320,6 @@ style.textContent = `
     .wb-root.is-collapsed .wb-header { border-bottom: 0; }
     .wb-header button, .wb-header input, .wb-header select { cursor: pointer; }
     .wb-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .wb-mark {
-        display: grid;
-        place-items: center;
-        flex: none;
-        width: 34px;
-        height: 34px;
-        border: 2px solid #fff;
-        border-radius: var(--wb-radius);
-        font-size: 17px;
-        font-weight: 900;
-        line-height: 1;
-    }
     .wb-title { font-size: 15px; font-weight: 900; line-height: 1.15; letter-spacing: 0.01em; }
     .wb-subtitle { margin-top: 2px; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; opacity: 0.82; }
     .wb-header-actions { display: flex; align-items: center; gap: 8px; flex: none; justify-content: flex-end; width: 100%; }
@@ -668,15 +656,6 @@ panel.className = "wb-root";
 panel.setAttribute("aria-label", "Robot simulator");
 panel.innerHTML = `
     <header class="wb-header">
-    <!--
-        <div class="wb-brand">
-            <!--<span class="wb-mark" aria-hidden="true">V</span>
-            <div>
-                <h2 class="wb-title">Robot Simulator</h2>
-                <p class="wb-subtitle">Team V.A.N. · FRC 12148</p>
-            </div>
-        </div>
-    -->
         <div class="wb-header-actions">
             <span class="wb-status" id="status" data-state="loading" role="status" aria-live="polite">Loading robot…</span>
             <button class="wb-icon-button" type="button" data-action="collapse" aria-label="Collapse robot simulator" aria-expanded="true">−</button>
