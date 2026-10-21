@@ -76,6 +76,6 @@
   },
   "java.compile.nullAnalysis.mode": "automatic",
   "git.ignoredRepositories": [
-    "akit/build"
+    "ascope/build"
   ]
 }

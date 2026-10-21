@@ -1,12 +1,8 @@
-import com.vanniktech.maven.publish.GradlePlugin
-import com.vanniktech.maven.publish.JavadocJar
-import com.vanniktech.maven.publish.SourcesJar
-
 plugins {
     id 'groovy'
     id 'java-gradle-plugin'
     id "com.diffplug.spotless" version "8.6.0"
-    id 'com.vanniktech.maven.publish' version '0.37.0'
+    id 'com.gradle.plugin-publish' version '2.2.1'
 }
 
 group = 'org.teamvan.wasmbot'
@@ -25,58 +21,59 @@ dependencies {
 }
 
 gradlePlugin {
+    website = 'https://github.com/frcvan/wasmbot'
+    vcsUrl = 'https://github.com/frcvan/wasmbot.git'
     plugins {
         wasmbot {
             id = 'org.teamvan.wasmbot'
             implementationClass = 'org.teamvan.wasmbot.plugin.WasmbotBuildPlugin'
             displayName = 'Wasmbot'
             description = project.description
+            tags = [
+                'frc',
+                'wpilib',
+                'webassembly',
+                'graalvm',
+                'simulation'
+            ]
         }
     }
 }
 
-def groovydocJar = tasks.register('groovydocJar', Jar) {
-    archiveClassifier = 'javadoc'
+// The plugin's API is Groovy, so ship Groovydoc in the generated Javadoc artifact.
+tasks.matching { it.name == 'javadocJar' }.configureEach {
     from(tasks.named('groovydoc'))
 }
 
-mavenPublishing {
-    configure(new GradlePlugin(new JavadocJar.None(), new SourcesJar.Sources()))
-    publishToMavenCentral()
-    // Tagged releases require signing; local development publications do not.
-    if (providers.gradleProperty('releaseVersion').isPresent()) {
-        signAllPublications()
-    }
-    pom {
-        name = 'Wasmbot'
-        description = project.description
-        url = 'https://github.com/frcvan/wasmbot'
-        inceptionYear = '2026'
-        licenses {
-            license {
-                name = 'MIT License'
-                url = 'https://opensource.org/license/mit/'
-                distribution = 'repo'
-            }
-        }
-        developers {
-            developer {
-                id = 'frcvan'
-                name = 'Team V.A.N.'
-                url = 'https://github.com/frcvan'
-            }
-        }
-        scm {
+// The Plugin Portal supplies the plugin marker and Javadoc/sources jars; only POM metadata is
+// configured here. Publishing itself is handled by publishPlugins.
+publishing {
+    publications.withType(MavenPublication).configureEach {
+        pom {
+            name = 'Wasmbot'
+            description = project.description
             url = 'https://github.com/frcvan/wasmbot'
-            connection = 'scm:git:https://github.com/frcvan/wasmbot.git'
-            developerConnection = 'scm:git:ssh://git@github.com/frcvan/wasmbot.git'
+            inceptionYear = '2026'
+            licenses {
+                license {
+                    name = 'MIT License'
+                    url = 'https://opensource.org/license/mit/'
+                    distribution = 'repo'
+                }
+            }
+            developers {
+                developer {
+                    id = 'frcvan'
+                    name = 'Team V.A.N.'
+                    url = 'https://github.com/frcvan'
+                }
+            }
+            scm {
+                url = 'https://github.com/frcvan/wasmbot'
+                connection = 'scm:git:https://github.com/frcvan/wasmbot.git'
+                developerConnection = 'scm:git:ssh://git@github.com/frcvan/wasmbot.git'
+            }
         }
-    }
-}
-
-publishing.publications.withType(MavenPublication).configureEach {
-    if (name == 'pluginMaven') {
-        artifact(groovydocJar)
     }
 }
 
@@ -86,15 +83,15 @@ def buildLite = tasks.register('buildLite', Exec) {
     group = 'WASM'
     description = 'Builds the bundled AdvantageScope Lite frontend. Use -PskipDocs=true to omit docs.'
     workingDir(projectDir)
-    commandLine('node', 'akit/buildLite.mjs')
-    inputs.file(layout.projectDirectory.file('akit/buildLite.mjs'))
-    inputs.file(layout.projectDirectory.file('akit/NT4.ts'))
+    commandLine('node', 'ascope/buildLite.mjs')
+    inputs.file(layout.projectDirectory.file('ascope/buildLite.mjs'))
+    inputs.file(layout.projectDirectory.file('ascope/NT4.ts'))
     def skipDocs = providers.gradleProperty('skipDocs').map { it.toBoolean() }.orElse(false)
     inputs.property('skipDocs', skipDocs)
     doFirst {
         environment('WASMBOT_SKIP_DOCS', skipDocs.get().toString())
     }
-    outputs.dir('akit/build/lite/static')
+    outputs.dir('ascope/build/lite/static')
 }
 
 def bundleWasmLibrary = tasks.register('bundleWasmLibrary', Zip) {
@@ -113,7 +110,7 @@ def bundleWasmLibrary = tasks.register('bundleWasmLibrary', Zip) {
     from('tools') { into 'tools' }
     from('AdvantageKit-LICENSE') { into 'licenses' }
     from('WPILib-License.md') { into 'licenses' }
-    from('akit/build/lite/static') { into 'web/advantagescope' }
+    from('ascope/build/lite/static') { into 'web/advantagescope' }
     dependsOn(buildLite)
 }
 
@@ -150,14 +147,14 @@ spotless {
     json {
         target fileTree(".") {
             include "**/*.json"
-            exclude "**/build/**", "**/build-*/**", ".wpilib/**", "akit/.npm-cache/**"
+            exclude "**/build/**", "**/build-*/**", ".wpilib/**", "ascope/.npm-cache/**"
         }
         gson().indentWithSpaces(2)
     }
     format "misc", {
         target fileTree(".") {
             include "**/*.md", "**/.gitignore"
-            exclude "**/build/**", "**/build-*/**", "akit/.npm-cache/**"
+            exclude "**/build/**", "**/build-*/**", "ascope/.npm-cache/**"
         }
         trimTrailingWhitespace()
         leadingTabsToSpaces(2)

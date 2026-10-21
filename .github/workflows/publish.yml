@@ -1,4 +1,4 @@
-name: Publish to Maven Central
+name: Publish to Gradle Plugin Portal
 
 on:
     create:
@@ -7,7 +7,7 @@ permissions:
     contents: read
 
 concurrency:
-    group: maven-central-${{ github.ref }}
+    group: gradle-plugin-portal-${{ github.ref }}
     cancel-in-progress: false
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
             - name: Cache AdvantageScope npm packages
               uses: actions/cache@v4
               with:
-                  path: akit/.npm-cache
+                  path: ascope/.npm-cache
                   key: ${{ runner.os }}-advantage-scope-npm-e28580467
                   restore-keys: |
                       ${{ runner.os }}-advantage-scope-npm-
@@ -55,12 +55,10 @@ jobs:
               uses: gradle/actions/setup-gradle@v6
               with:
                   gradle-version: "9.4.1"
-            - name: Check, sign, publish, and release to Maven Central
+            - name: Check and publish to the Gradle Plugin Portal
               shell: bash
               env:
                   RELEASE_TAG: ${{ github.event.ref }}
-                  ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
-                  ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
-                  ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.MAVEN_SIGNING_KEY }}
-                  ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.MAVEN_SIGNING_PASSWORD }}
-              run: gradle --no-daemon check publishAndReleaseToMavenCentral -PreleaseVersion="${RELEASE_TAG#v}" -x spotlessCheck -x spotlessApply
+                  GRADLE_PUBLISH_KEY: ${{ secrets.GRADLE_PUBLISH_KEY }}
+                  GRADLE_PUBLISH_SECRET: ${{ secrets.GRADLE_PUBLISH_SECRET }}
+              run: gradle --no-daemon check publishPlugins -PreleaseVersion="${RELEASE_TAG#v}" -x spotlessCheck -x spotlessApply

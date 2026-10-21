@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "bun:test";
-import { NT4_Client, NT4_Topic } from "../../akit/NT4";
+import { NT4_Client, NT4_Topic } from "../../ascope/NT4";
 import { createNetworkTables } from "../../shim/networktables.js";
 
 const clients: NT4_Client[] = [];

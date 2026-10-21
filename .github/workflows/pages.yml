@@ -25,7 +25,7 @@ jobs:
             - name: Cache AdvantageScope npm packages
               uses: actions/cache@v4
               with:
-                  path: akit/.npm-cache
+                  path: ascope/.npm-cache
                   key: ${{ runner.os }}-advantage-scope-npm-e28580467
                   restore-keys: |
                       ${{ runner.os }}-advantage-scope-npm-

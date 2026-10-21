@@ -1,7 +1,7 @@
 .gradle/
 build/
 .npm-cache/
-akit/.npm-cache/
+ascope/.npm-cache/
 
 
 *.env*

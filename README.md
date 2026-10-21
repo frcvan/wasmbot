@@ -48,15 +48,15 @@ The plugin JAR bundles runtime Java sources, metadata, browser assets, tools, an
 
 ### Published artifact
 
-Add `mavenCentral()` to the consumer's existing `pluginManagement.repositories` in `settings.gradle`, keeping its WPILib and Gradle Plugin Portal repositories. Then apply the published version in `build.gradle`:
+The published plugin resolves from the `gradlePluginPortal()` repository that WPILib's generated `pluginManagement` block already declares, so no extra repository entry is needed. Apply the published version in `build.gradle`:
 
 ```groovy
 id 'org.teamvan.wasmbot' version '0.1.0'
 ```
 
-The implementation coordinate is `org.teamvan.wasmbot:wasmbot:0.1.0`, resolved through the `org.teamvan.wasmbot` Gradle plugin marker. Both are published to Maven Central, not the Gradle Plugin Portal. The plugin ID replaces the old unqualified `wasmbot` ID; the `wasmbot { ... }` extension and runtime packages are unchanged.
+The implementation coordinate is `org.teamvan.wasmbot:wasmbot:0.1.0`, resolved through the `org.teamvan.wasmbot` Gradle plugin marker. Both are published to the Gradle Plugin Portal. The plugin ID replaces the old unqualified `wasmbot` ID; the `wasmbot { ... }` extension and runtime packages are unchanged.
 
-For local development, run `gradle check assemble publishToMavenLocal` from this standalone build with Gradle 9.4.1 and Java 25, then add `mavenLocal()` before `mavenCentral()` in the consumer's `pluginManagement.repositories`. The [independent example](examples/commands-v3) uses this published-plugin path, not an included source build.
+For local development, run `gradle check assemble publishToMavenLocal` from this standalone build with Gradle 9.4.1 and Java 25, then add `mavenLocal()` before `gradlePluginPortal()` in the consumer's `pluginManagement.repositories`. The [independent example](examples/commands-v3) uses this published-plugin path, not an included source build.
 
 Do not add the core runtime as a desktop `implementation` dependency. The plugin adds it only to the WASM source sets.
 
@@ -344,7 +344,7 @@ Custom hosts that omit `controllers` may still provide `{enabled, mode, alliance
 
 ### AdvantageScope-compatible NT4 client
 
-[`akit/NT4.ts`](akit/NT4.ts) is a self-contained replacement for AdvantageScope's `src/hub/dataSources/nt4/NT4.ts`. It exports `NT4_Client`, `NT4_Topic`, and all three `NT4_PORTS_*` constants, with the same constructor and public methods. Copy that file into the consuming frontend; existing imports and client construction can remain unchanged. This repository does not modify the sibling AdvantageScope checkout.
+[`ascope/NT4.ts`](ascope/NT4.ts) is a self-contained replacement for AdvantageScope's `src/hub/dataSources/nt4/NT4.ts`. It exports `NT4_Client`, `NT4_Topic`, and all three `NT4_PORTS_*` constants, with the same constructor and public methods. Copy that file into the consuming frontend; existing imports and client construction can remain unchanged. This repository does not modify the sibling AdvantageScope checkout.
 
 The frontend and Wasm robot must share the same `globalThis.wasmbot.nt` host (and `wasmbot.nowNanos` clock). The supplied viewer and CLI harnesses install it automatically; a custom frontend uses the setup above. This is an in-process transport, not a WebSocket server: address, ports, and app name are accepted for API compatibility but do not select a remote endpoint. No MessagePack dependency is required.
 

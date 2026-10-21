@@ -1,28 +1,17 @@
-# Publishing to Maven Central
+# Publishing to the Gradle Plugin Portal
 
 ## One-time setup
 
-1. Sign in to the [Sonatype Central Portal](https://central.sonatype.com/). The `org.teamvan` namespace is already registered; ensure the publishing account has access to it. Both the implementation and plugin marker use its `org.teamvan.wasmbot` subnamespace.
-2. Generate a [Central Portal user token](https://central.sonatype.org/publish/generate-portal-token/). Use its generated username and password, **not** the account's login credentials.
-3. Create a passphrase-protected signing key using `gpg --full-generate-key`. Find its fingerprint with `gpg --list-secret-keys --keyid-format LONG`, then publish the public key and export the private key using that fingerprint:
+1. Sign in at [plugins.gradle.org](https://plugins.gradle.org/). There is no namespace to register and no GPG key to create: the Portal hosts the artifacts and handles discovery.
+2. Open the **API Keys** tab in your profile and copy the key and secret. Regenerate them if they are not shown.
+3. In this GitHub repository, open **Settings → Secrets and variables → Actions** and add these repository secrets:
 
-    ```sh
-    gpg --keyserver keyserver.ubuntu.com --send-keys YOUR_KEY_FINGERPRINT
-    gpg --armor --export-secret-keys YOUR_KEY_FINGERPRINT
-    ```
+    | Secret                 | Value                                  |
+    | ---------------------- | -------------------------------------- |
+    | `GRADLE_PUBLISH_KEY`   | Portal API key.                        |
+    | `GRADLE_PUBLISH_SECRET`| Portal API secret matching that key.   |
 
-    The export prints the private key. Copy the entire armored block into the secret below; never commit it or put it in build logs. See Sonatype's [signing requirements](https://central.sonatype.org/publish/requirements/gpg/).
-
-4. In this GitHub repository, open **Settings → Secrets and variables → Actions** and add these repository secrets:
-
-    | Secret                   | Value                                                                          |
-    | ------------------------ | ------------------------------------------------------------------------------ |
-    | `MAVEN_CENTRAL_USERNAME` | Generated Central Portal token username.                                       |
-    | `MAVEN_CENTRAL_PASSWORD` | Generated Central Portal token password.                                       |
-    | `MAVEN_SIGNING_KEY`      | Complete ASCII-armored private key, including BEGIN/END lines and line breaks. |
-    | `MAVEN_SIGNING_PASSWORD` | Signing key passphrase.                                                        |
-
-5. Enable GitHub Actions and commit the publishing configuration before creating the first release tag. Every tag creation can publish, regardless of branch; restrict tag creation, updates, and deletion to release maintainers with a GitHub tag ruleset.
+4. Enable GitHub Actions and commit the publishing configuration before creating the first release tag. Every tag creation can publish, regardless of branch; restrict tag creation, updates, and deletion to release maintainers with a GitHub tag ruleset.
 
 ## Release
 
@@ -34,10 +23,10 @@ git tag -a v0.1.0 -m "Release 0.1.0"
 git push origin refs/tags/v0.1.0
 ```
 
-Each new tag triggers a publication attempt. Its name becomes the version, with a leading `v` removed: `v0.1.0` and `0.1.0` both select version `0.1.0`. There is no tag-name or branch filter; choose a new, Maven Central-compatible version. Ordinary local builds default to `0.1.0` and remain unsigned.
+Each new tag triggers a publication attempt. Its name becomes the version, with a leading `v` removed: `v0.1.0` and `0.1.0` both select version `0.1.0`. There is no tag-name or branch filter; choose a new, Portal-compatible version. Ordinary local builds default to `0.1.0` and never publish.
 
 [The publishing workflow](.github/workflows/publish.yml) listens **only to GitHub's `create` event**, with the publishing job restricted to tag creation. Ordinary pushes, tag updates/deletions, and branch creation do not publish; there is no manual trigger or release-tag validation script.
 
-The publishing job checks out the tagged commit, runs `check`, builds the sources and Groovydoc artifacts, signs all publications, and calls `publishAndReleaseToMavenCentral` using Java 25 and Gradle 9.4.1. It publishes both the implementation JAR and plugin marker with their POM metadata. Plugin classes and the bundled library resource use `org.teamvan.wasmbot.plugin`. It does not build the consumer's WASM image; run the native/browser smokes separately when runtime behavior changes.
+The publishing job checks out the tagged commit, runs `check`, builds the sources and Javadoc artifacts, and calls `publishPlugins` using Java 25 and Gradle 9.4.1. The `com.gradle.plugin-publish` plugin uploads both the implementation JAR and the `org.teamvan.wasmbot` plugin marker to `https://plugins.gradle.org/m2`, along with their POM metadata. Consumers need only the `gradlePluginPortal()` repository that WPILib's generated `pluginManagement` block already declares. Plugin classes and the bundled library resource use `org.teamvan.wasmbot.plugin`. The job does not build the consumer's WASM image; run the native/browser smokes separately when runtime behavior changes.
 
-Watch **Actions → Publish to Maven Central** and the [Central Portal deployments](https://central.sonatype.com/publishing/deployments). Successful releases are automatically submitted for publication; repository availability can take another 10–30 minutes. Maven Central versions are immutable: never move/recreate a released tag or reuse its version. If an upload fails, inspect its deployment before retrying; fix the issue and create a new version tag rather than triggering a tag update. See the [publishing plugin's Central guide](https://vanniktech.github.io/gradle-maven-publish-plugin/central/) for deployment details.
+Check the run under **Actions → Publish to Gradle Plugin Portal**. New plugins, and the first version of each plugin, enter the Portal's moderation queue, which can take a few days; later versions of an approved plugin usually appear within minutes. Portal versions are immutable: never move/recreate a released tag or reuse its version. If an upload fails, fix the issue and create a new version tag rather than triggering a tag update. See Gradle's [Plugin Publish Plugin guide](https://docs.gradle.org/current/userguide/publishing_gradle_plugins.html) for details.
