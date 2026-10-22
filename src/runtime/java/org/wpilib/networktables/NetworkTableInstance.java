@@ -57,6 +57,42 @@ public final class NetworkTableInstance implements AutoCloseable {
     return integers.computeIfAbsent(name, key -> new IntegerTopic(getTopic(key)));
   }
 
+  public BooleanTopic getBooleanTopic(String name) {
+    return new BooleanTopic(getTopic(name));
+  }
+
+  public FloatTopic getFloatTopic(String name) {
+    return new FloatTopic(getTopic(name));
+  }
+
+  public StringTopic getStringTopic(String name) {
+    return new StringTopic(getTopic(name));
+  }
+
+  public RawTopic getRawTopic(String name) {
+    return new RawTopic(getTopic(name));
+  }
+
+  public BooleanArrayTopic getBooleanArrayTopic(String name) {
+    return new BooleanArrayTopic(getTopic(name));
+  }
+
+  public IntegerArrayTopic getIntegerArrayTopic(String name) {
+    return new IntegerArrayTopic(getTopic(name));
+  }
+
+  public FloatArrayTopic getFloatArrayTopic(String name) {
+    return new FloatArrayTopic(getTopic(name));
+  }
+
+  public DoubleArrayTopic getDoubleArrayTopic(String name) {
+    return new DoubleArrayTopic(getTopic(name));
+  }
+
+  public StringArrayTopic getStringArrayTopic(String name) {
+    return new StringArrayTopic(getTopic(name));
+  }
+
   public <T> StructTopic<T> getStructTopic(String name, Struct<T> struct) {
     @SuppressWarnings("unchecked")
     StructTopic<T> topic = (StructTopic<T>) structs.get(name);

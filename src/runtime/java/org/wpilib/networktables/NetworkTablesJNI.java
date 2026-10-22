@@ -19,6 +19,7 @@ public final class NetworkTablesJNI {
   private static final Map<Integer, String> topicNames = new HashMap<>();
   private static final Map<Integer, JSString> topics = new HashMap<>();
   private static final Map<Integer, Publication> publications = new HashMap<>();
+  private static final long MAX_SAFE_INTEGER = 9_007_199_254_740_991L;
   private static int nextHandle = 2;
 
   private static final class Publication {
@@ -205,7 +206,13 @@ public final class NetworkTablesJNI {
 
   public static boolean setInteger(int entry, long time, long value) {
     Publication publication = writable(entry, NetworkTableType.INTEGER);
-    return publication != null && putNumber(publication.owner, path(entry), timestamp(time), value);
+    if (publication == null) return false;
+    // JavaScript numbers lose precision beyond 2^53 - 1, so exact int64 values travel as
+    // decimal strings, as they do for telemetry entries.
+    return isSafeInteger(value)
+        ? putNumber(publication.owner, path(entry), timestamp(time), value)
+        : putString(
+            publication.owner, path(entry), timestamp(time), JSString.of(Long.toString(value)));
   }
 
   public static boolean setFloat(int entry, long time, float value) {
@@ -265,8 +272,15 @@ public final class NetworkTablesJNI {
     Publication publication = writable(entry, NetworkTableType.INTEGER_ARRAY);
     if (publication == null) return false;
     JSObject array = newArray(value.length);
-    for (int i = 0; i < value.length; i++) arrayNumber(array, i, value[i]);
+    for (int i = 0; i < value.length; i++) {
+      if (isSafeInteger(value[i])) arrayNumber(array, i, value[i]);
+      else arrayString(array, i, JSString.of(Long.toString(value[i])));
+    }
     return putArray(publication.owner, path(entry), timestamp(time), array);
+  }
+
+  private static boolean isSafeInteger(long value) {
+    return value >= -MAX_SAFE_INTEGER && value <= MAX_SAFE_INTEGER;
   }
 
   public static boolean setFloatArray(int entry, long time, float[] value) {

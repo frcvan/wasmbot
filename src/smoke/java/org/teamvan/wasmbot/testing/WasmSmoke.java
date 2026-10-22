@@ -4,8 +4,8 @@ import com.ctre.phoenix6.CANBus;
 import java.util.ArrayList;
 import java.util.function.Supplier;
 import org.graalvm.webimage.api.JS;
-import org.teamvan.wasmbot.JsTelemetry;
 import org.teamvan.wasmbot.WasmRuntime;
+import org.wpilib.backend.NetworkTablesTelemetryBackend;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Mechanism;
 import org.wpilib.command3.Scheduler;
@@ -19,6 +19,7 @@ import org.wpilib.math.linalg.Matrix;
 import org.wpilib.math.system.DCMotor;
 import org.wpilib.math.system.LinearSystem;
 import org.wpilib.math.util.Nat;
+import org.wpilib.networktables.NetworkTableInstance;
 import org.wpilib.simulation.DCMotorSim;
 import org.wpilib.system.RobotController;
 import org.wpilib.system.Timer;
@@ -47,7 +48,9 @@ public final class WasmSmoke {
     WatchdogSmoke.run();
     NetworkTablesSmoke.run();
     ControllerSmoke.run();
-    var backend = new JsTelemetry();
+    SimSmoke.run();
+    var backend =
+        new NetworkTablesTelemetryBackend(NetworkTableInstance.getDefault(), "/Telemetry");
     backend.getEntry("/Review/Boolean").logBoolean(true, 0);
     backend.getEntry("/Review/Number").logDouble(1.25, 0);
     var text = backend.getEntry("/Review/String");
@@ -124,7 +127,7 @@ public final class WasmSmoke {
     private int schedulerCalls;
     private int simulationCalls;
 
-    private SmokeRobot(JsTelemetry backend) {
+    private SmokeRobot(NetworkTablesTelemetryBackend backend) {
       if (!Boolean.getBoolean("wasmbot")) {
         throw new AssertionError("WASM detection must be available in the Robot constructor");
       }

@@ -6,8 +6,11 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.graalvm.webimage.api.JS;
+import org.wpilib.backend.NetworkTablesTelemetryBackend;
 import org.wpilib.framework.RobotBase;
+import org.wpilib.networktables.NetworkTableInstance;
 import org.wpilib.system.Watchdog;
+import org.wpilib.telemetry.TelemetryRegistry;
 
 /** Nonblocking JavaScript-hosted launcher for ordinary WPILib robot programs. */
 public final class WasmApplication {
@@ -91,7 +94,8 @@ public final class WasmApplication {
     try {
       System.setProperty("wasmbot", "true");
       DeployFiles.install();
-      JsTelemetry.install();
+      TelemetryRegistry.registerBackend(
+          "", new NetworkTablesTelemetryBackend(NetworkTableInstance.getDefault(), "/Telemetry"));
       JsTunables.install();
       WasmRuntime.refresh();
       robot = Objects.requireNonNull(factory.get(), "Robot constructor returned null");
