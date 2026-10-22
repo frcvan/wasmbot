@@ -3,6 +3,9 @@
     "includes": [
       {
         "pattern": "wasmbot/deploy/.*"
+      },
+      {
+        "pattern": "wasmbot/deploy-index.txt"
       }
     ]
   }

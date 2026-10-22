@@ -80,9 +80,20 @@ class WasmbotBuildPlugin implements Plugin<Project> {
         project.tasks.named(runtime.compileJavaTaskName) { dependsOn(prepare) }
         project.tasks.named(runtime.processResourcesTaskName) { dependsOn(prepare) }
         project.tasks.named(smoke.compileJavaTaskName) { dependsOn(prepare) }
+        // The runtime copies these resources into the image's in-memory file system at startup.
+        def deployIndex = project.tasks.register('generateWasmDeployIndex', GenerateDeployIndex) {
+            group = 'WASM'
+            description = 'Lists the deploy files bundled as native-image resources.'
+            deployDirectory.set(project.layout.projectDirectory.dir('src/main/deploy'))
+            deployFiles.from(project.fileTree('src/main/deploy'))
+            indexFile.set(project.layout.buildDirectory.file('wasm/deploy-index.txt'))
+        }
         project.tasks.named(wasm.processResourcesTaskName) {
             from(project.layout.projectDirectory.dir('src/main/deploy')) {
                 into 'wasmbot/deploy'
+            }
+            from(deployIndex) {
+                into 'wasmbot'
             }
         }
         project.tasks.withType(JavaCompile).configureEach {

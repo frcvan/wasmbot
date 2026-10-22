@@ -3,5 +3,6 @@ build/
 .npm-cache/
 ascope/.npm-cache/
 
+bin/
 
 *.env*

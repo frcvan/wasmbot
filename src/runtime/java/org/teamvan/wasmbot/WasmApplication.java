@@ -90,6 +90,7 @@ public final class WasmApplication {
     started = true;
     try {
       System.setProperty("wasmbot", "true");
+      DeployFiles.install();
       JsTelemetry.install();
       JsTunables.install();
       WasmRuntime.refresh();
