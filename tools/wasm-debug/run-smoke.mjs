@@ -24,6 +24,15 @@ globalThis.wasmbot = {
     startupFailureProbe,
     nowNanos: () => now,
     driverStation: () => ds,
+    setRumble: (port, left, right, leftTrigger, rightTrigger) => {
+        globalThis.wasmbot.rumbleLast = [
+            port,
+            left,
+            right,
+            leftTrigger,
+            rightTrigger
+        ].join(",");
+    },
     continuations: createWasmContinuations()
 };
 const networkTables = createNetworkTables(() => now);

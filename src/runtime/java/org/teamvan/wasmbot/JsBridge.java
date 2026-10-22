@@ -58,6 +58,22 @@ public final class JsBridge {
   public static native void setOpModes(String json);
 
   /**
+   * Forwards controller rumble to the host. Hosts without haptic output simply omit {@code
+   * wasmbot.setRumble}.
+   *
+   * @param port Driver Station port
+   * @param leftRumble left handle, from 0 through 65535
+   * @param rightRumble right handle, from 0 through 65535
+   * @param leftTriggerRumble left trigger, from 0 through 65535
+   * @param rightTriggerRumble right trigger, from 0 through 65535
+   */
+  @JS.Coerce
+  @JS(
+      "globalThis.wasmbot.setRumble?.(port, leftRumble, rightRumble, leftTriggerRumble, rightTriggerRumble);")
+  public static native void setRumble(
+      int port, int leftRumble, int rightRumble, int leftTriggerRumble, int rightTriggerRumble);
+
+  /**
    * Publishes one numeric telemetry value.
    *
    * @param path NetworkTables path

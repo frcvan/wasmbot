@@ -36,6 +36,7 @@ public final class DriverStationBackend {
   private static final int POV_RIGHT_BUTTON = 14;
   private static final int POV_BUTTONS = 15;
   private static final int MAX_BUTTONS = 26;
+  private static final int RUMBLE_OUTPUT = 0x8;
   private static final TouchpadFinger NEUTRAL_FINGER = new TouchpadFinger(false, 0.0f, 0.0f);
 
   private record OpModeOption(
@@ -197,7 +198,8 @@ public final class DriverStationBackend {
   }
 
   public static int getJoystickSupportedOutputs(int port) {
-    return 0;
+    // The browser exposes left/right haptic handles but no separate trigger or LED channels.
+    return isJoystickConnected(port) ? RUMBLE_OUTPUT : 0;
   }
 
   public static String getJoystickName(int port) {

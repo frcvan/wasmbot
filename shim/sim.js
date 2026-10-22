@@ -1203,6 +1203,40 @@ hooks.setOpModes = (value) => {
     renderOpModes();
 };
 
+// Rumble arrives as four 16-bit handle values. The standard gamepad API exposes only the two
+// grip motors, so trigger values fold into them instead of being dropped.
+hooks.setRumble = (
+    port,
+    leftRumble,
+    rightRumble,
+    leftTriggerRumble,
+    rightTriggerRumble
+) => {
+    const gamepad = connectedGamepads().find(
+        (candidate) => candidate.mapping === "standard" && gamepadPort(candidate) === port
+    );
+    const actuator = gamepad?.vibrationActuator;
+    if (!actuator) return;
+    const strong = clamp(Math.max(leftRumble, leftTriggerRumble) / 65535, 0, 1);
+    const weak = clamp(Math.max(rightRumble, rightTriggerRumble) / 65535, 0, 1);
+    if (strong === 0 && weak === 0) {
+        actuator.reset?.();
+        return;
+    }
+    try {
+        void actuator
+            .playEffect("dual-rumble", {
+                startDelay: 0,
+                duration: 250,
+                strongMagnitude: strong,
+                weakMagnitude: weak
+            })
+            ?.catch(() => {});
+    } catch {
+        // Browsers without a dual-rumble effect ignore haptic requests.
+    }
+};
+
 function openControls() {
     keys.clear();
     draft = clone(controls);

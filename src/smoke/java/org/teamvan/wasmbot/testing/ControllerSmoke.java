@@ -3,6 +3,7 @@ package org.teamvan.wasmbot.testing;
 import org.graalvm.webimage.api.JS;
 import org.wpilib.driverstation.DriverStation;
 import org.wpilib.driverstation.Gamepad;
+import org.wpilib.driverstation.GenericHID;
 import org.wpilib.driverstation.NiDsXboxController;
 import org.wpilib.driverstation.POVDirection;
 import org.wpilib.event.EventLoop;
@@ -22,6 +23,10 @@ final class ControllerSmoke {
   @JS.Coerce
   @JS("return globalThis.wasmbot.controllerSmokePhase;")
   private static native int phase();
+
+  @JS.Coerce
+  @JS("return globalThis.wasmbot.rumbleLast ?? '';")
+  private static native String rumbleLast();
 
   private static void require(boolean condition, String message) {
     if (!condition) {
@@ -96,6 +101,12 @@ final class ControllerSmoke {
       require(
           hid.getPOV() == POVDirection.UP_RIGHT && hid.getPOV(1) == POVDirection.CENTER,
           "diagonal and unavailable POV");
+      require(
+          hid.getSupportedOutputs().contains(GenericHID.SupportedOutput.RUMBLE),
+          "connected controllers advertise rumble");
+      hid.setRumble(GenericHID.RumbleType.LEFT_RUMBLE, 1.0);
+      hid.setRawRumble(GenericHID.RumbleType.RIGHT_TRIGGER_RUMBLE, 321);
+      require(rumbleLast().equals("0,65535,0,0,321"), "rumble forwards 16-bit handle values");
       require(!DriverStation.getGenericHID(2).isConnected(), "null port disconnected");
     } else if (phase == 2) {
       require(
@@ -134,6 +145,7 @@ final class ControllerSmoke {
       require(
           primary.getFaceDownButtonReleased() && !primary.getFaceDownButtonReleased(),
           "disconnect releases primary exactly once");
+      require(hid.getSupportedOutputs().isEmpty(), "disconnect clears output capabilities");
       require(secondary.getFaceDownButtonReleased(), "disconnect releases secondary");
       require(last.getMisc6ButtonReleased(), "disconnect releases last port high button");
     } else if (phase == 5) {
