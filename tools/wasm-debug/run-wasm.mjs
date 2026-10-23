@@ -38,7 +38,7 @@ globalThis.wasmbot = {
     driverStation: () => ds,
     continuations: createWasmContinuations()
 };
-const networkTables = createNetworkTables(() => nowNanos);
+const networkTables = createNetworkTables();
 networkTables.install();
 networkTables.listen((event) => {
     if (event.kind !== "value") return;

@@ -120,7 +120,7 @@ function defaultControls() {
 }
 
 function clone(value) {
-    return JSON.parse(JSON.stringify(value));
+    return structuredClone(value);
 }
 
 function normalizeControls(value) {
@@ -237,6 +237,7 @@ let modeValue = "unknown";
 let allianceValue = "blue";
 let opModes = [];
 let selectedOpModeId = 0;
+let selectedOpMode = null;
 let ready = false;
 let captureBinding = null;
 const modeSelections = loadModeSelections();
@@ -258,8 +259,17 @@ const driverStation = {
     alliance: "blue",
     opMode: 0,
     opModeName: "",
+    // Bumped only when a keyboard, gamepad, or Driver Station selection changes. The Java
+    // snapshot reader returns early while this is unchanged instead of walking six ports.
+    revision: 0,
     controllers: Array(PORT_COUNT).fill(null)
 };
+// Reused every tick: readDriverStation used to allocate a fresh names array at 50 Hz.
+const portNames = Array(PORT_COUNT).fill("Disconnected");
+const NO_GAMEPADS = [];
+// Whether any gamepad is connected, so keyboard-only sessions skip polling the Gamepad API.
+let gamepadsConnected = 0;
+let inputRevision = 0;
 let nowNanos = 0;
 
 // Keep the existing object: frontend adapters may already hold a reference to it.
@@ -267,7 +277,8 @@ const hooks = (globalThis.wasmbot ??= {});
 hooks.nowNanos = () => nowNanos;
 hooks.driverStation = readDriverStation;
 hooks.onInstallHooks ??= [];
-const networkTables = createNetworkTables(() => nowNanos);
+refreshGamepadCount();
+const networkTables = createNetworkTables();
 networkTables.install();
 
 const style = document.createElement("style");
@@ -745,22 +756,55 @@ const portsList = panel.querySelector('[data-role="ports"]');
 const help = panel.querySelector('[data-role="help"]');
 const controlsBody = dialog.querySelector('[data-role="controls-body"]');
 
-let lastPortKey = "";
+const lastPortNames = Array(PORT_COUNT).fill("Disconnected");
+let lastKeyboardPort = -2;
+const portRows = [];
 
-function createPortRow(indexText, nameText, tagText, connected) {
+function portRowAt(position) {
+    const existing = portRows[position];
+    if (existing) return existing;
     const row = document.createElement("li");
-    row.className = connected ? "wb-port is-connected" : "wb-port";
-    const index = document.createElement("span");
-    index.className = "wb-port-index";
-    index.textContent = indexText;
-    const name = document.createElement("span");
-    name.className = "wb-port-name";
-    name.textContent = nameText;
-    const tag = document.createElement("span");
-    tag.className = "wb-port-tag";
-    tag.textContent = tagText;
-    row.append(index, name, tag);
-    return row;
+    row.className = "wb-port";
+    const indexLabel = document.createElement("span");
+    indexLabel.className = "wb-port-index";
+    const nameLabel = document.createElement("span");
+    nameLabel.className = "wb-port-name";
+    const tagLabel = document.createElement("span");
+    tagLabel.className = "wb-port-tag";
+    row.append(indexLabel, nameLabel, tagLabel);
+    portsList.append(row);
+    const entry = {
+        row,
+        indexLabel,
+        nameLabel,
+        tagLabel,
+        index: null,
+        name: null,
+        tag: null,
+        connected: null
+    };
+    portRows[position] = entry;
+    return entry;
+}
+
+function updatePortRow(position, indexText, nameText, tagText, connected) {
+    const entry = portRowAt(position);
+    if (entry.index !== indexText) {
+        entry.indexLabel.textContent = indexText;
+        entry.index = indexText;
+    }
+    if (entry.name !== nameText) {
+        entry.nameLabel.textContent = nameText;
+        entry.name = nameText;
+    }
+    if (entry.tag !== tagText) {
+        entry.tagLabel.textContent = tagText;
+        entry.tag = tagText;
+    }
+    if (entry.connected !== connected) {
+        entry.row.className = connected ? "wb-port is-connected" : "wb-port";
+        entry.connected = connected;
+    }
 }
 
 function setStatus(text, state) {
@@ -775,6 +819,7 @@ function setError(message) {
 
 function updateEnabledUi() {
     const enabled = enable.checked;
+    bumpInput();
     driverStation.enabled = enabled;
     enabledHint.textContent = enabled
         ? `Enabled ${modeValue === "unknown" ? "" : "in " + labelFor(modeValue) + " mode"}`
@@ -820,12 +865,27 @@ function updateHelp() {
 }
 
 function connectedGamepads() {
-    const padsNow = navigator.getGamepads?.() ?? [];
-    return [...padsNow].filter((gamepad) => gamepad?.connected);
+    if (gamepadsConnected === 0) return NO_GAMEPADS;
+    const padsNow = navigator.getGamepads?.();
+    return padsNow ? [...padsNow].filter((gamepad) => gamepad?.connected) : NO_GAMEPADS;
+}
+
+function refreshGamepadCount() {
+    const padsNow = navigator.getGamepads?.();
+    let count = 0;
+    if (padsNow) {
+        for (const gamepad of padsNow) if (gamepad?.connected) count++;
+    }
+    gamepadsConnected = count;
+    bumpInput();
+}
+
+function bumpInput() {
+    inputRevision++;
 }
 
 function gamepadPort(gamepad) {
-    const configured = controls.gamepadPorts[String(gamepad.index)];
+    const configured = controls.gamepadPorts[gamepad.index];
     if (Number.isInteger(configured)) return configured;
     return gamepad.index < PORT_COUNT ? gamepad.index : -1;
 }
@@ -919,9 +979,11 @@ function renderOpModes() {
         opModeDescription.hidden = true;
     }
 
+    selectedOpMode = selected ?? null;
     if (previous !== selection) {
         driverStation.opMode = selection;
         driverStation.opModeName = selected?.name ?? "";
+        bumpInput();
     }
 }
 
@@ -930,6 +992,7 @@ function setMode(value) {
     modeValue = value;
     driverStation.mode = value;
     keys.clear();
+    bumpInput();
     renderModes();
     renderOpModes();
     updateEnabledUi();
@@ -938,25 +1001,35 @@ function setMode(value) {
 function setAlliance(value) {
     allianceValue = value;
     renderAlliance();
+    bumpInput();
 }
 
 function renderPorts(names, keyboardPort) {
-    const key = `${keyboardPort}|${names.join("|")}`;
-    if (key === lastPortKey) return;
-    lastPortKey = key;
+    // Compare per-port state directly: the previous version built a joined key string and a mapped
+    // array on every 20 ms tick just to detect that nothing changed.
+    if (keyboardPort === lastKeyboardPort) {
+        let same = true;
+        for (let port = 0; port < PORT_COUNT; port++) {
+            if (names[port] !== lastPortNames[port]) {
+                same = false;
+                break;
+            }
+        }
+        if (same) return;
+    }
+    for (let port = 0; port < PORT_COUNT; port++) lastPortNames[port] = names[port];
+    lastKeyboardPort = keyboardPort;
 
-    const rows = [];
+    let position = 0;
     for (let port = 0; port < PORT_COUNT; port++) {
         const name = names[port] || "Disconnected";
         if (name !== "Disconnected") {
-            const isKeyboard = name === "Keyboard" && keyboardPort === port;
-            rows.push(
-                createPortRow(
-                    String(port),
-                    name,
-                    isKeyboard ? "Keyboard" : "Gamepad",
-                    true
-                )
+            updatePortRow(
+                position++,
+                String(port),
+                name,
+                name === "Keyboard" && keyboardPort === port ? "Keyboard" : "Gamepad",
+                true
             );
             continue;
         }
@@ -970,25 +1043,16 @@ function renderPorts(names, keyboardPort) {
             end++;
         }
         const count = end - port + 1;
-        rows.push(
-            createPortRow(
-                count === 1 ? String(port) : `${port}–${end}`,
-                "Disconnected",
-                count === 1 ? "—" : `${count} ports`,
-                false
-            )
+        updatePortRow(
+            position++,
+            count === 1 ? String(port) : `${port}–${end}`,
+            "Disconnected",
+            count === 1 ? "—" : `${count} ports`,
+            false
         );
         port = end;
     }
-    portsList.replaceChildren(...rows);
-}
-
-function controllerAxes(controller) {
-    return controller?.axes ?? [];
-}
-
-function controllerButtons(controller) {
-    return controller?.buttons ?? [];
+    while (portRows.length > position) portRows.pop().row.remove();
 }
 
 function readDriverStation() {
@@ -1012,48 +1076,55 @@ function readDriverStation() {
         keyboard.buttons[i] = keys.has(controls.buttons[i]);
     }
 
-    const allianceOverride =
-        controls.allianceKey && keys.has(controls.allianceKey);
-    driverStation.alliance = allianceOverride ? "red" : allianceValue;
+    driverStation.alliance =
+        controls.allianceKey && keys.has(controls.allianceKey)
+            ? "red"
+            : allianceValue;
     driverStation.mode = modeValue;
-    const selected = opModes.find(
-        (opMode) => opMode.id === selectedOpModeId && opMode.mode === modeValue
-    );
-    driverStation.opMode = selected?.id ?? 0;
-    driverStation.opModeName = selected?.name ?? "";
+    // The selected opmode is resolved when the mode, selection, or list changes, not per tick.
+    driverStation.opMode = selectedOpMode ? selectedOpMode.id : 0;
+    driverStation.opModeName = selectedOpMode ? selectedOpMode.name : "";
     driverStation.controllers.fill(null);
 
-    const names = Array(PORT_COUNT).fill("Disconnected");
+    portNames.fill("Disconnected");
     const keyboardPort = controls.keyboardEnabled ? controls.keyboardPort : -1;
+    // Gamepad axes change without events, so a connected pad forces a fresh snapshot revision.
+    driverStation.revision =
+        gamepadsConnected > 0 ? ++inputRevision : inputRevision;
+    const padsNow = gamepadsConnected > 0 ? navigator.getGamepads?.() : null;
 
-    for (const gamepad of connectedGamepads()) {
-        if (gamepad.mapping !== "standard") {
-            if (gamepad.index < PORT_COUNT)
-                names[gamepad.index] = "Unsupported mapping";
-            continue;
-        }
-        const port = gamepadPort(gamepad);
-        if (port < 0 || port >= PORT_COUNT) continue;
-        const pad = pads[port];
-        pad.name = gamepad.id;
-        const rawAxes = controllerAxes(gamepad);
-        const deadzone = controls.deadzone;
-        const rawButtons = controllerButtons(gamepad);
-        pad.axes[0] = applyDeadzone(rawAxes[0], deadzone);
-        pad.axes[1] = applyDeadzone(rawAxes[1], deadzone) * leftYInvert;
-        pad.axes[2] = applyDeadzone(rawAxes[2], deadzone);
-        pad.axes[3] = applyDeadzone(rawAxes[3], deadzone) * rightYInvert;
-        pad.axes[4] = clamp(rawButtons[6]?.value ?? 0, 0, 1);
-        pad.axes[5] = clamp(rawButtons[7]?.value ?? 0, 0, 1);
-        pad.buttons.fill(false);
-        for (let i = 0; i < STANDARD_BUTTONS.length; i++) {
-            if (STANDARD_BUTTONS[i] >= 0) {
-                pad.buttons[STANDARD_BUTTONS[i]] =
-                    rawButtons[i]?.pressed ?? false;
+    if (padsNow) {
+        for (const gamepad of padsNow) {
+            if (!gamepad?.connected) continue;
+            if (gamepad.mapping !== "standard") {
+                if (gamepad.index < PORT_COUNT) {
+                    portNames[gamepad.index] = "Unsupported mapping";
+                }
+                continue;
             }
+            const port = gamepadPort(gamepad);
+            if (port < 0 || port >= PORT_COUNT) continue;
+            const pad = pads[port];
+            pad.name = gamepad.id;
+            const rawAxes = gamepad.axes;
+            const deadzone = controls.deadzone;
+            const rawButtons = gamepad.buttons;
+            pad.axes[0] = applyDeadzone(rawAxes[0], deadzone);
+            pad.axes[1] = applyDeadzone(rawAxes[1], deadzone) * leftYInvert;
+            pad.axes[2] = applyDeadzone(rawAxes[2], deadzone);
+            pad.axes[3] = applyDeadzone(rawAxes[3], deadzone) * rightYInvert;
+            pad.axes[4] = clamp(rawButtons[6]?.value ?? 0, 0, 1);
+            pad.axes[5] = clamp(rawButtons[7]?.value ?? 0, 0, 1);
+            pad.buttons.fill(false);
+            for (let i = 0; i < STANDARD_BUTTONS.length; i++) {
+                if (STANDARD_BUTTONS[i] >= 0) {
+                    pad.buttons[STANDARD_BUTTONS[i]] =
+                        rawButtons[i]?.pressed ?? false;
+                }
+            }
+            driverStation.controllers[port] = pad;
+            portNames[port] = pad.name;
         }
-        driverStation.controllers[port] = pad;
-        names[port] = pad.name;
     }
 
     if (
@@ -1062,10 +1133,10 @@ function readDriverStation() {
         !driverStation.controllers[keyboardPort]
     ) {
         driverStation.controllers[keyboardPort] = keyboard;
-        names[keyboardPort] = "Keyboard";
+        portNames[keyboardPort] = "Keyboard";
     }
 
-    renderPorts(names, keyboardPort);
+    renderPorts(portNames, keyboardPort);
     return driverStation;
 }
 
@@ -1098,11 +1169,14 @@ addEventListener("keydown", (event) => {
     const code = normalizeCode(event);
     if (!boundCodes.has(code)) return;
     event.preventDefault();
-    keys.add(code);
+    if (!keys.has(code)) {
+        keys.add(code);
+        bumpInput();
+    }
 });
 
 addEventListener("keyup", (event) => {
-    keys.delete(normalizeCode(event));
+    if (keys.delete(normalizeCode(event))) bumpInput();
 });
 
 addEventListener("blur", disable);
@@ -1111,12 +1185,17 @@ addEventListener("visibilitychange", () => {
 });
 // A held key must not remain active when focus moves into a telemetry search field.
 addEventListener("focusin", (event) => {
-    if (editing(event.target)) keys.clear();
+    if (editing(event.target) && keys.size > 0) {
+        keys.clear();
+        bumpInput();
+    }
 });
 addEventListener("gamepadconnected", () => {
+    refreshGamepadCount();
     if (dialog.open) renderControls();
 });
 addEventListener("gamepaddisconnected", () => {
+    refreshGamepadCount();
     if (dialog.open) renderControls();
 });
 
@@ -1144,6 +1223,8 @@ opModeSelect.addEventListener("change", () => {
     const selected = opModes.find(
         (opMode) => opMode.id === id && opMode.mode === modeValue
     );
+    selectedOpMode = selected ?? null;
+    bumpInput();
     modeSelections[modeValue] = selected?.name ?? "";
     saveModeSelections(modeSelections);
     driverStation.opMode = id;
@@ -1188,6 +1269,7 @@ panel.addEventListener("click", (event) => {
 });
 
 hooks.setOpModes = (value) => {
+    bumpInput();
     try {
         const parsed = typeof value === "string" ? JSON.parse(value) : value;
         opModes = Array.isArray(parsed)
@@ -1212,9 +1294,21 @@ hooks.setRumble = (
     leftTriggerRumble,
     rightTriggerRumble
 ) => {
-    const gamepad = connectedGamepads().find(
-        (candidate) => candidate.mapping === "standard" && gamepadPort(candidate) === port
-    );
+    if (gamepadsConnected === 0) return;
+    const padsNow = navigator.getGamepads?.();
+    let gamepad = null;
+    if (padsNow) {
+        for (const candidate of padsNow) {
+            if (
+                candidate?.connected &&
+                candidate.mapping === "standard" &&
+                gamepadPort(candidate) === port
+            ) {
+                gamepad = candidate;
+                break;
+            }
+        }
+    }
     const actuator = gamepad?.vibrationActuator;
     if (!actuator) return;
     const strong = clamp(Math.max(leftRumble, leftTriggerRumble) / 65535, 0, 1);
@@ -1238,7 +1332,10 @@ hooks.setRumble = (
 };
 
 function openControls() {
-    keys.clear();
+    if (keys.size > 0) {
+        keys.clear();
+        bumpInput();
+    }
     draft = clone(controls);
     captureBinding = null;
     renderControls();
@@ -1389,7 +1486,10 @@ controlsBody.addEventListener("change", (event) => {
 
 dialog.addEventListener("close", () => {
     captureBinding = null;
-    keys.clear();
+    if (keys.size > 0) {
+        keys.clear();
+        bumpInput();
+    }
 });
 
 dialog.addEventListener("click", (event) => {
@@ -1399,6 +1499,8 @@ dialog.addEventListener("click", (event) => {
         controls = normalizeControls(draft);
         saveControls(controls);
         applyControls();
+        // Axis inversion and deadzone shape the next snapshot without any input event.
+        bumpInput();
         keys.clear();
         renderOpModes();
         dialog.close();

@@ -12,7 +12,7 @@ afterEach(() => {
 function setup() {
     let nanos = 5_000_000;
     globalThis.wasmbot = { nowNanos: () => nanos };
-    const host = createNetworkTables(() => nanos);
+    const host = createNetworkTables();
     host.install();
     const announced: string[] = [];
     const removed: string[] = [];
@@ -183,7 +183,7 @@ test("client publishing, property deletion, retention and multiple owners share 
     client.connect();
     await Promise.resolve();
     client.addTimestampedSample("/value", 42, 1.5);
-    expect(globalThis.wasmbot?.ntGet?.("/value")).toBe(1.5);
+    expect(globalThis.wasmbot?.nt?.getTopic("/value")?.value).toBe(1.5);
     client.setProperties("/value", { units: null });
     expect(properties).toEqual([{ retained: true }]);
     const second = {};
@@ -193,7 +193,7 @@ test("client publishing, property deletion, retention and multiple owners share 
     expect(host.snapshot().map((topic) => topic.name)).toEqual(["/value"]);
     client.setRetained("/value", false);
     expect(removed).toEqual(["/value"]);
-    expect(globalThis.wasmbot?.ntGet?.("/value")).toBeUndefined();
+    expect(globalThis.wasmbot?.nt?.getTopic("/value")?.value).toBeUndefined();
 });
 
 test("disconnect cancels delivery, reconnect restores subscriptions and publications", async () => {
@@ -233,9 +233,9 @@ test("conflicting publishers and stale timestamps cannot overwrite the current v
     expect(host.put(second, "/value", 30, "wrong")).toBe(false);
     expect(host.put(first, "/value", 10, 1)).toBe(false);
     host.unpublish(first, "/value");
-    expect(globalThis.wasmbot?.ntGet?.("/value")).toBe(2);
+    expect(globalThis.wasmbot?.nt?.getTopic("/value")?.value).toBe(2);
     host.unpublish(second, "/value");
-    expect(globalThis.wasmbot?.ntGet?.("/value")).toBeUndefined();
+    expect(globalThis.wasmbot?.nt?.getTopic("/value")?.value).toBeUndefined();
 });
 
 test("a faster overlapping subscription accelerates already queued samples", async () => {
@@ -251,6 +251,27 @@ test("a faster overlapping subscription accelerates already queued samples", asy
     client.subscribe(["/"], true, false, 0);
     await delivered();
     expect(data).toEqual([{ name: "/value", timestamp: 10, value: 7 }]);
+});
+
+test("schema publications announce one retained structschema topic with encoded bytes", () => {
+    const { host } = setup();
+    const announced: { name: string; type: string; retained: unknown }[] = [];
+    host.listen((event) => {
+        if (event.kind !== "announce" || event.topic.name !== "/.schema/Review") return;
+        announced.push({
+            name: event.topic.name,
+            type: event.topic.type,
+            retained: event.topic.properties.retained
+        });
+    });
+    expect(host.putSchema("/.schema/Review", "int32:bigendian")).toBe(true);
+    expect(host.putSchema("/.schema/Review", "int32:bigendian")).toBe(true);
+    const topic = host.getTopic("/.schema/Review");
+    expect(announced).toEqual([
+        { name: "/.schema/Review", type: "structschema", retained: true }
+    ]);
+    expect(topic?.timestamp).toBe(0);
+    expect(topic?.value).toEqual(new TextEncoder().encode("int32:bigendian"));
 });
 
 test("unknown IDs fail, and custom type strings map to NT binary", () => {

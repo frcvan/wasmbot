@@ -35,7 +35,7 @@ globalThis.wasmbot = {
     },
     continuations: createWasmContinuations()
 };
-const networkTables = createNetworkTables(() => now);
+const networkTables = createNetworkTables();
 networkTables.install();
 networkTables.listen((event) => {
     if (
@@ -89,6 +89,12 @@ const expected = {
     Doubles: [1.25, -2.5],
     Strings: ["a", "b"],
     Empty: [],
+    Doubles5: [1, 2, 3, 4, 5],
+    Doubles8: [1, 2, 3, 4, 5, 6, 7, 8],
+    Floats5: [1.5, 2.5, 3.5, 4.5, 5.5],
+    Booleans9: [true, false, true, false, true, false, true, false, true],
+    Strings5: ["a", "b", "c", "d", "e"],
+    Ints6: [1, 2, 3, 4, 5, 6],
     SafeLong: 9007199254740991,
     UnsafeLong: "9007199254740992",
     Longs: [

@@ -63,6 +63,17 @@ public final class WasmSmoke {
     backend.getEntry("/Review/Doubles").logDoubleArray(new double[] {1.25, -2.5}, 0);
     backend.getEntry("/Review/Strings").logStringArray(new String[] {"a", "b"}, 0);
     backend.getEntry("/Review/Empty").logDoubleArray(new double[] {}, 0);
+    backend.getEntry("/Review/Doubles5").logDoubleArray(new double[] {1, 2, 3, 4, 5}, 0);
+    backend.getEntry("/Review/Doubles8").logDoubleArray(new double[] {1, 2, 3, 4, 5, 6, 7, 8}, 0);
+    backend
+        .getEntry("/Review/Floats5")
+        .logFloatArray(new float[] {1.5f, 2.5f, 3.5f, 4.5f, 5.5f}, 0);
+    backend
+        .getEntry("/Review/Booleans9")
+        .logBooleanArray(
+            new boolean[] {true, false, true, false, true, false, true, false, true}, 0);
+    backend.getEntry("/Review/Strings5").logStringArray(new String[] {"a", "b", "c", "d", "e"}, 0);
+    backend.getEntry("/Review/Ints6").logIntArray(new int[] {1, 2, 3, 4, 5, 6}, 0);
     backend.getEntry("/Review/SafeLong").logLong(9007199254740991L, 0);
     backend.getEntry("/Review/UnsafeLong").logLong(9007199254740992L, 0);
     backend

@@ -1,9 +1,13 @@
 // In-process NetworkTables transport shared by the robot, viewer, and NT4 adapter.
-export function createNetworkTables(nowNanos) {
+export function createNetworkTables() {
   const topics = new Map();
   const listeners = new Set();
   let listenerSnapshot = [];
   let nextId = 1;
+  // Schema samples are rare; one encoder and one property bag avoid a per-publication allocation.
+  const schemaEncoder = new TextEncoder();
+  const schemaProperties = { retained: true };
+  const schemaOwner = {};
   const emit = (event) => {
     for (const listener of listenerSnapshot) listener(event);
   };
@@ -29,16 +33,26 @@ export function createNetworkTables(nowNanos) {
     topic.publishers.delete(owner);
     removeUnused(topic);
   }
-  function put(owner, name, timestamp, value) {
+  // `owned` marks a value the caller just built for this publication and cannot observe again,
+  // so array publications from Java skip a second allocation. Shared buffers keep their copy.
+  function put(owner, name, timestamp, value, owned) {
     const topic = topics.get(name);
     if (!topic || topic.publishers.get(owner) !== topic.type) return false;
     if (timestamp < topic.timestamp) return false;
     topic.timestamp = timestamp;
-    topic.value = Array.isArray(value) || value instanceof Uint8Array ? value.slice() : value;
+    topic.value =
+      owned === true || !(Array.isArray(value) || value instanceof Uint8Array)
+        ? value
+        : value.slice();
     topic.revision++;
     topic.lastPublisher = owner;
     emit({ kind: "value", topic, timestamp, value: topic.value });
     return true;
+  }
+  /** Announces a struct schema topic and publishes its encoded schema bytes. */
+  function putSchema(name, value) {
+    publish(schemaOwner, name, "structschema", schemaProperties);
+    return put(schemaOwner, name, 0, schemaEncoder.encode(value), true);
   }
   const transport = {
     snapshot: () => [...topics.values()],
@@ -57,6 +71,7 @@ export function createNetworkTables(nowNanos) {
     publish,
     unpublish,
     put,
+    putSchema,
     setProperties(name, update) {
       const topic = topics.get(name);
       if (!topic) return;
@@ -68,30 +83,11 @@ export function createNetworkTables(nowNanos) {
       removeUnused(topic);
     },
   };
-  const implicitOwners = new Map();
-  function inferType(value) {
-    if (typeof value === "boolean") return "boolean";
-    if (typeof value === "number") return "double";
-    if (typeof value === "string") return "string";
-    if (value instanceof Uint8Array) return "raw";
-    if (Array.isArray(value)) return `${inferType(value[0] ?? 0)}[]`;
-    return "json";
-  }
   return {
     ...transport,
     install(target = globalThis.wasmbot) {
       if (!target) throw new Error("Initialize globalThis.wasmbot before installing NetworkTables.");
       target.nt = transport;
-      target.ntGet = (name) => topics.get(name)?.value;
-      target.ntPut = (name, value, type = inferType(value), timestamp = nowNanos() / 1000) => {
-        let owner = implicitOwners.get(name);
-        if (!owner) {
-          owner = {};
-          implicitOwners.set(name, owner);
-          publish(owner, name, type);
-        }
-        put(owner, name, timestamp, value);
-      };
     },
   };
 }

@@ -65,6 +65,7 @@ type HostEvent = {
 
 type Host = {
     snapshot(): HostTopic[];
+    getTopic(name: string): HostTopic | undefined;
     listen(listener: (event: HostEvent) => void): () => void;
     publish(
         owner: object,
@@ -88,13 +89,6 @@ declare global {
             rightX: number;
         };
         nt?: Host;
-        ntGet?: (path: string) => unknown;
-        ntPut?: (
-            path: string,
-            value: unknown,
-            type?: string,
-            timestampUs?: number
-        ) => void;
         continuations?: unknown;
         start?: () => void;
         tick?: () => Promise<void>;
@@ -115,6 +109,11 @@ type Pending = {
     samples: { timestamp: number; value: unknown }[];
     due: number;
 };
+type MatchedOptions = {
+    announced: boolean;
+    all: boolean;
+    periodic: number;
+};
 
 export class NT4_Client {
     private host: Host | null = null;
@@ -129,6 +128,10 @@ export class NT4_Client {
     private pending = new Map<string, Pending>();
     private dataTopics = new Set<string>();
     private cancelTimer: (() => void) | null = null;
+    private scheduledDue = Infinity;
+    // Prefix matching is O(subscriptions x patterns); the result only changes when the
+    // subscription set changes, not per delivered sample.
+    private optionsCache = new Map<string, MatchedOptions>();
 
     constructor(
         serverAddr: string,
@@ -176,6 +179,7 @@ export class NT4_Client {
         this.stopListening = null;
         this.cancelTimer?.();
         this.cancelTimer = null;
+        this.scheduledDue = Infinity;
         this.pending.clear();
         this.serverTopics.clear();
         this.dataTopics.clear();
@@ -216,11 +220,13 @@ export class NT4_Client {
     unsubscribe(subscriptionId: number) {
         if (!this.subscriptions.delete(subscriptionId))
             throw 'Unknown subscription ID "' + subscriptionId + '"';
+        this.optionsCache.clear();
         if (this.active) this.reconcile();
     }
 
     clearAllSubscriptions() {
         this.subscriptions.clear();
+        this.optionsCache.clear();
         if (this.active) this.reconcile();
     }
 
@@ -323,6 +329,7 @@ export class NT4_Client {
             periodic,
             topicsOnly
         });
+        this.optionsCache.clear();
         if (this.active) this.reconcile();
         return id;
     }
@@ -334,6 +341,8 @@ export class NT4_Client {
     }
 
     private options(name: string) {
+        const cached = this.optionsCache.get(name);
+        if (cached) return cached;
         let announced = false;
         let all = false;
         let periodic = Infinity;
@@ -347,7 +356,9 @@ export class NT4_Client {
                 Math.max(0, subscription.periodic) * 1000
             );
         }
-        return { announced, all, periodic };
+        const options = { announced, all, periodic };
+        this.optionsCache.set(name, options);
+        return options;
     }
 
     private reconcile() {
@@ -358,6 +369,7 @@ export class NT4_Client {
                 this.serverTopics.delete(name);
                 this.pending.delete(name);
                 this.dataTopics.delete(name);
+                this.optionsCache.delete(name);
                 this.onTopicUnannounce(topic);
             } else if (options.periodic === Infinity) {
                 this.pending.delete(name);
@@ -414,6 +426,7 @@ export class NT4_Client {
             this.serverTopics.delete(name);
             this.pending.delete(name);
             this.dataTopics.delete(name);
+            this.optionsCache.delete(name);
             if (topic) this.onTopicUnannounce(topic);
         } else if (event.kind === "announce") {
             this.announce(event.topic);
@@ -454,15 +467,25 @@ export class NT4_Client {
     }
 
     private schedule() {
-        this.cancelTimer?.();
-        this.cancelTimer = null;
-        if (!this.active || this.pending.size === 0) return;
+        if (!this.active || this.pending.size === 0) {
+            this.cancelTimer?.();
+            this.cancelTimer = null;
+            this.scheduledDue = Infinity;
+            return;
+        }
         let due = Infinity;
         for (const pending of this.pending.values())
             due = Math.min(due, pending.due);
+        // Every enqueued sample lands here. Rearming an unchanged (or later) deadline would
+        // churn the timer queue once per telemetry sample instead of once per delivery period.
+        if (this.cancelTimer !== null && due >= this.scheduledDue) return;
+        this.cancelTimer?.();
+        this.cancelTimer = null;
+        this.scheduledDue = due;
         const timer = setTimeout(
             () => {
                 this.cancelTimer = null;
+                this.scheduledDue = Infinity;
                 const now = Date.now();
                 for (const [name, pending] of [...this.pending]) {
                     if (this.pending.get(name) !== pending || pending.due > now)

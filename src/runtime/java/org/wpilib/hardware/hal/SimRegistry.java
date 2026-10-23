@@ -1,6 +1,7 @@
 package org.wpilib.hardware.hal;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,10 @@ import java.util.Map;
  * {@code SimDeviceSim}) and the vendor low-level shims, which is what lets a simulated vendor
  * device exchange data with its Java sim class. Handles start at 1 and {@code 0} means "no
  * device/value", matching HAL.
+ *
+ * <p>Handles are sequential, so devices and values live in flat arrays indexed by handle. Sim
+ * classes read and write values every 20 ms tick ({@code DCMotorSim}, vendor sims), and the browser
+ * event loop is single-threaded, so no monitor is taken on those paths.
  */
 public final class SimRegistry {
   /** One simulated value: a named int, long, double, boolean, or enum entry. */
@@ -61,38 +66,59 @@ public final class SimRegistry {
     }
   }
 
+  private static final int INITIAL_HANDLES = 32;
   private static final Map<String, Device> DEVICES_BY_NAME = new HashMap<>();
-  private static final Map<Integer, Device> DEVICES = new HashMap<>();
-  private static final Map<Integer, Value> VALUES = new HashMap<>();
   private static final Map<String, Boolean> ENABLED = new HashMap<>();
+  private static Device[] devices = new Device[INITIAL_HANDLES];
+  private static Value[] values = new Value[INITIAL_HANDLES];
+
+  /** Devices and values share one handle space; index order is creation order. */
   private static int nextHandle = 1;
 
   private SimRegistry() {}
+
+  private static void grow(int handle) {
+    if (handle < devices.length) return;
+    int capacity = devices.length;
+    while (capacity <= handle) capacity <<= 1;
+    devices = Arrays.copyOf(devices, capacity);
+    values = Arrays.copyOf(values, capacity);
+  }
+
+  private static Device deviceAt(int handle) {
+    Device[] all = devices;
+    return handle > 0 && handle < all.length ? all[handle] : null;
+  }
+
+  private static Value valueAt(int handle) {
+    Value[] all = values;
+    return handle > 0 && handle < all.length ? all[handle] : null;
+  }
 
   /**
    * @param name device name
    * @return the new device handle, or {@code 0} when the name is already in use
    */
-  public static synchronized int createDevice(String name) {
+  public static int createDevice(String name) {
     if (name == null || DEVICES_BY_NAME.containsKey(name)) {
       return 0;
     }
     Device device = new Device(nextHandle++, name);
+    grow(device.handle);
     DEVICES_BY_NAME.put(name, device);
-    DEVICES.put(device.handle, device);
+    devices[device.handle] = device;
     return device.handle;
   }
 
   /** Frees a device and every value on it. */
-  public static synchronized void freeDevice(int handle) {
-    Device device = DEVICES.remove(handle);
+  public static void freeDevice(int handle) {
+    Device device = deviceAt(handle);
     if (device == null) {
       return;
     }
+    devices[handle] = null;
     DEVICES_BY_NAME.remove(device.name);
-    for (Value value : device.values.values()) {
-      VALUES.remove(value.handle);
-    }
+    for (Value value : device.values.values()) values[value.handle] = null;
     device.values.clear();
   }
 
@@ -100,31 +126,35 @@ public final class SimRegistry {
    * @param handle device handle
    * @return the device, or {@code null}
    */
-  public static synchronized Device device(int handle) {
-    return DEVICES.get(handle);
+  public static Device device(int handle) {
+    return deviceAt(handle);
   }
 
   /**
    * @param name device name
    * @return the device, or {@code null}
    */
-  public static synchronized Device device(String name) {
+  public static Device device(String name) {
     return DEVICES_BY_NAME.get(name);
   }
 
   /**
    * @return a snapshot of every device, in creation order
    */
-  public static synchronized List<Device> devices() {
-    return new ArrayList<>(DEVICES.values());
+  public static List<Device> devices() {
+    List<Device> result = new ArrayList<>();
+    for (Device device : devices) {
+      if (device != null) result.add(device);
+    }
+    return result;
   }
 
   /**
    * @param handle value handle
    * @return the value, or {@code null}
    */
-  public static synchronized Value value(int handle) {
-    return VALUES.get(handle);
+  public static Value value(int handle) {
+    return valueAt(handle);
   }
 
   /**
@@ -132,8 +162,8 @@ public final class SimRegistry {
    * @param name value name
    * @return the value, or {@code null}
    */
-  public static synchronized Value value(int device, String name) {
-    Device owner = DEVICES.get(device);
+  public static Value value(int device, String name) {
+    Device owner = deviceAt(device);
     return owner == null ? null : owner.values.get(name);
   }
 
@@ -142,7 +172,7 @@ public final class SimRegistry {
    *
    * @return the value handle, or {@code 0} when the device is unknown
    */
-  public static synchronized int createValue(
+  public static int createValue(
       int device,
       String name,
       int direction,
@@ -151,7 +181,7 @@ public final class SimRegistry {
       double doubleValue,
       String[] options,
       double[] optionValues) {
-    Device owner = DEVICES.get(device);
+    Device owner = deviceAt(device);
     if (owner == null || name == null) {
       return 0;
     }
@@ -170,8 +200,9 @@ public final class SimRegistry {
             doubleValue,
             options,
             optionValues);
+    grow(value.handle);
     owner.values.put(name, value);
-    VALUES.put(value.handle, value);
+    values[value.handle] = value;
     return value.handle;
   }
 
@@ -183,8 +214,8 @@ public final class SimRegistry {
    * @param longValue long-valued payload
    * @param doubleValue double-valued payload
    */
-  public static synchronized void write(int handle, int type, long longValue, double doubleValue) {
-    Value value = VALUES.get(handle);
+  public static void write(int handle, int type, long longValue, double doubleValue) {
+    Value value = valueAt(handle);
     if (value == null) {
       return;
     }
@@ -194,8 +225,8 @@ public final class SimRegistry {
   }
 
   /** Resets a numeric value to zero, matching HAL reset semantics. */
-  public static synchronized void reset(int handle) {
-    Value value = VALUES.get(handle);
+  public static void reset(int handle) {
+    Value value = valueAt(handle);
     if (value != null) {
       value.longValue = 0;
       value.doubleValue = 0;
@@ -203,7 +234,7 @@ public final class SimRegistry {
   }
 
   /** Enables or disables every device whose name starts with the prefix. */
-  public static synchronized void setEnabled(String prefix, boolean enabled) {
+  public static void setEnabled(String prefix, boolean enabled) {
     ENABLED.put(prefix == null ? "" : prefix, enabled);
   }
 
@@ -211,8 +242,9 @@ public final class SimRegistry {
    * @param name device name
    * @return whether the name is enabled; names are enabled unless a prefix disables them
    */
-  public static synchronized boolean isEnabled(String name) {
+  public static boolean isEnabled(String name) {
     String candidate = name == null ? "" : name;
+    if (ENABLED.isEmpty()) return true;
     boolean enabled = true;
     for (Map.Entry<String, Boolean> entry : ENABLED.entrySet()) {
       if (candidate.startsWith(entry.getKey()) && !entry.getValue()) {
@@ -225,7 +257,11 @@ public final class SimRegistry {
   /**
    * @return every live value, in creation order
    */
-  public static synchronized List<Value> values() {
-    return new ArrayList<>(VALUES.values());
+  public static List<Value> values() {
+    List<Value> result = new ArrayList<>();
+    for (Value value : values) {
+      if (value != null) result.add(value);
+    }
+    return result;
   }
 }

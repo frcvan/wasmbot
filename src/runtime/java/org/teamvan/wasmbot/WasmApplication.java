@@ -29,11 +29,11 @@ public final class WasmApplication {
   /**
    * Exports {@code wasmbot.start} and the serialized asynchronous {@code wasmbot.tick} entry point.
    *
-   * <p>The host installs {@code wasmbot.nowNanos}, {@code wasmbot.driverStation}, {@code
-   * wasmbot.ntGet}, and {@code wasmbot.ntPut} before calling {@code wasmbot.start()}. The factory
-   * runs once, with the {@code wasmbot} system property set to {@code true}, after telemetry
-   * installation and the initial driver-station refresh. Framework startup initializes simulation
-   * without blocking on a native notifier.
+   * <p>The host installs {@code wasmbot.nowNanos}, {@code wasmbot.driverStation}, and {@code
+   * wasmbot.nt} before calling {@code wasmbot.start()}. The factory runs once, with the {@code
+   * wasmbot} system property set to {@code true}, after telemetry installation and the initial
+   * driver-station refresh. Framework startup initializes simulation without blocking on a native
+   * notifier.
    *
    * @param factory constructs the consumer's normal robot
    */

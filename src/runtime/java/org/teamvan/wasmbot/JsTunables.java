@@ -26,6 +26,8 @@ import org.wpilib.tunable.util.PathUtil;
  * entries use /tune for requests and /value for acknowledgements, exactly like the SDK NT backend.
  */
 public final class JsTunables implements TunableBackend {
+  private static final JSString EMPTY_PROPERTIES = JSString.of("{}");
+
   private final Map<String, Stored> entries = new LinkedHashMap<>();
   private Stored[] snapshot;
   private boolean closed;
@@ -104,7 +106,7 @@ public final class JsTunables implements TunableBackend {
           createState(
               JSString.of("/Tunables" + path + "/.type"),
               JSString.of("string"),
-              JSString.of("{}"),
+              EMPTY_PROPERTIES,
               false,
               false);
       putString(state, JSString.of(type));

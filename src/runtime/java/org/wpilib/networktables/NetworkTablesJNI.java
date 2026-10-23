@@ -1,6 +1,7 @@
 package org.wpilib.networktables;
 
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import org.graalvm.webimage.api.JS;
@@ -13,17 +14,40 @@ import org.teamvan.wasmbot.JsBytes;
  * serialization remain in use. Host samples use microseconds; the public Alpha 7 API uses
  * nanoseconds. Network transports, native listeners, and subscriber queues are not implemented
  * here.
+ *
+ * <p>Handles are allocated sequentially starting at 2, so topic and publication state lives in flat
+ * arrays indexed by handle instead of boxed map keys. In a 50 Hz robot loop that keeps every {@code
+ * setDouble} / {@code getDouble} on a bounds check and one array read.
  */
 public final class NetworkTablesJNI {
-  private static final Map<String, Integer> topicHandles = new HashMap<>();
-  private static final Map<Integer, String> topicNames = new HashMap<>();
-  private static final Map<Integer, JSString> topics = new HashMap<>();
-  private static final Map<Integer, Publication> publications = new HashMap<>();
   private static final long MAX_SAFE_INTEGER = 9_007_199_254_740_991L;
+  private static final int INITIAL_HANDLES = 64;
+  private static final JSString EMPTY_PROPERTIES = JSString.of("{}");
+  private static final JSString RETAINED_PROPERTIES = JSString.of("{\"retained\":true}");
+
+  /** Topic names are resolved once per publication, never per sample. */
+  private static final Map<String, Topic> topicByName = new HashMap<>();
+
+  private static Topic[] topics = new Topic[INITIAL_HANDLES];
+  private static Publication[] publications = new Publication[INITIAL_HANDLES];
   private static int nextHandle = 2;
 
+  /** One NetworkTables topic name and its cached JavaScript path string. */
+  private static final class Topic {
+    final int handle;
+    final String name;
+    final JSString path;
+
+    Topic(int handle, String name) {
+      this.handle = handle;
+      this.name = name;
+      this.path = JSString.of(name);
+    }
+  }
+
   private static final class Publication {
-    final int topic;
+    final Topic topic;
+    final JSString path;
     final int type;
     final JSString typeString;
     final JSObject owner = newOwner();
@@ -31,8 +55,9 @@ public final class NetworkTablesJNI {
     boolean published;
     private JsBytes rawBytes;
 
-    Publication(int topic, int type, String typeString, boolean writable) {
+    Publication(Topic topic, int type, String typeString, boolean writable) {
       this.topic = topic;
+      this.path = topic.path;
       this.type = type;
       this.typeString = JSString.of(typeString);
       this.writable = writable;
@@ -53,29 +78,50 @@ public final class NetworkTablesJNI {
   public static int getTopic(int inst, String name) {
     if (inst != 1)
       throw new UnsupportedOperationException("Only the default NT instance is supported");
-    return topicHandles.computeIfAbsent(
-        name,
-        key -> {
-          int handle = nextHandle++;
-          topicNames.put(handle, key);
-          topics.put(handle, JSString.of(key));
-          return handle;
-        });
+    Topic topic = topicByName.get(name);
+    if (topic == null) {
+      topic = new Topic(nextHandle++, name);
+      grow(topic.handle);
+      topicByName.put(name, topic);
+      topics[topic.handle] = topic;
+    }
+    return topic.handle;
   }
 
-  private static int topicHandle(int handle) {
-    Publication publication = publications.get(handle);
-    return publication == null ? handle : publication.topic;
+  private static void grow(int handle) {
+    if (handle < topics.length) return;
+    int capacity = topics.length;
+    while (capacity <= handle) capacity <<= 1;
+    topics = Arrays.copyOf(topics, capacity);
+    publications = Arrays.copyOf(publications, capacity);
+  }
+
+  private static Publication publication(int handle) {
+    Publication[] all = publications;
+    return handle >= 0 && handle < all.length ? all[handle] : null;
+  }
+
+  private static Topic topic(int handle) {
+    Topic[] all = topics;
+    return handle >= 0 && handle < all.length ? all[handle] : null;
+  }
+
+  private static Topic resolveTopic(int handle) {
+    Publication publication = publication(handle);
+    return topic(publication == null ? handle : publication.topic.handle);
   }
 
   private static JSString path(int handle) {
-    JSString path = topics.get(topicHandle(handle));
-    if (path == null) throw new IllegalArgumentException("Unknown NT handle: " + handle);
-    return path;
+    Publication publication = publication(handle);
+    if (publication != null) return publication.path;
+    Topic topic = topic(handle);
+    if (topic == null) throw new IllegalArgumentException("Unknown NT handle: " + handle);
+    return topic.path;
   }
 
   public static String getTopicName(int topic) {
-    return topicNames.get(topicHandle(topic));
+    Topic resolved = resolveTopic(topic);
+    return resolved == null ? null : resolved.name;
   }
 
   public static String getTopicTypeString(int topic) {
@@ -147,11 +193,13 @@ public final class NetworkTablesJNI {
   }
 
   private static int allocate(int topic, int type, String typeString, boolean writable) {
-    path(topic);
+    Topic owner = resolveTopic(topic);
+    if (owner == null) throw new IllegalArgumentException("Unknown NT topic: " + topic);
     if (NetworkTableType.getFromString(typeString).getValue() != type)
       throw new IllegalArgumentException("NT type does not match declared type: " + typeString);
     int handle = nextHandle++;
-    publications.put(handle, new Publication(topic, type, typeString, writable));
+    grow(handle);
+    publications[handle] = new Publication(owner, type, typeString, writable);
     return handle;
   }
 
@@ -163,8 +211,9 @@ public final class NetworkTablesJNI {
       int topic, int type, String typeString, String properties, PubSubOption... options) {
     checkOptions(options);
     int handle = allocate(topic, type, typeString, true);
-    Publication publication = publications.get(handle);
-    publishValue(publication.owner, path(topic), publication.typeString, JSString.of(properties));
+    Publication publication = publications[handle];
+    publishValue(
+        publication.owner, publication.path, publication.typeString, properties(properties));
     publication.published = true;
     return handle;
   }
@@ -180,11 +229,11 @@ public final class NetworkTablesJNI {
   }
 
   private static Publication writable(int entry, NetworkTableType type) {
-    Publication publication = publications.get(entry);
+    Publication publication = publication(entry);
     if (publication == null || !publication.writable || publication.type != type.getValue())
       return null;
     if (!publication.published) {
-      publishValue(publication.owner, path(entry), publication.typeString, JSString.of("{}"));
+      publishValue(publication.owner, publication.path, publication.typeString, EMPTY_PROPERTIES);
       publication.published = true;
     }
     return publication;
@@ -195,13 +244,14 @@ public final class NetworkTablesJNI {
   }
 
   private static boolean canSetDefault(int entry) {
-    return publications.containsKey(entry) && !hasValue(path(entry));
+    Publication publication = publication(entry);
+    return publication != null && !hasValue(publication.path);
   }
 
   public static boolean setBoolean(int entry, long time, boolean value) {
     Publication publication = writable(entry, NetworkTableType.BOOLEAN);
     return publication != null
-        && putBoolean(publication.owner, path(entry), timestamp(time), value);
+        && putBoolean(publication.owner, publication.path, timestamp(time), value);
   }
 
   public static boolean setInteger(int entry, long time, long value) {
@@ -210,19 +260,24 @@ public final class NetworkTablesJNI {
     // JavaScript numbers lose precision beyond 2^53 - 1, so exact int64 values travel as
     // decimal strings, as they do for telemetry entries.
     return isSafeInteger(value)
-        ? putNumber(publication.owner, path(entry), timestamp(time), value)
+        ? putNumber(publication.owner, publication.path, timestamp(time), value)
         : putString(
-            publication.owner, path(entry), timestamp(time), JSString.of(Long.toString(value)));
+            publication.owner,
+            publication.path,
+            timestamp(time),
+            JSString.of(Long.toString(value)));
   }
 
   public static boolean setFloat(int entry, long time, float value) {
     Publication publication = writable(entry, NetworkTableType.FLOAT);
-    return publication != null && putNumber(publication.owner, path(entry), timestamp(time), value);
+    return publication != null
+        && putNumber(publication.owner, publication.path, timestamp(time), value);
   }
 
   public static boolean setDouble(int entry, long time, double value) {
     Publication publication = writable(entry, NetworkTableType.DOUBLE);
-    return publication != null && putNumber(publication.owner, path(entry), timestamp(time), value);
+    return publication != null
+        && putNumber(publication.owner, publication.path, timestamp(time), value);
   }
 
   public static double getDouble(int entry, double defaultValue) {
@@ -236,7 +291,7 @@ public final class NetworkTablesJNI {
   public static boolean setString(int entry, long time, String value) {
     Publication publication = writable(entry, NetworkTableType.STRING);
     return publication != null
-        && putString(publication.owner, path(entry), timestamp(time), JSString.of(value));
+        && putString(publication.owner, publication.path, timestamp(time), JSString.of(value));
   }
 
   public static boolean setRaw(int entry, long time, byte[] value) {
@@ -248,7 +303,7 @@ public final class NetworkTablesJNI {
     if (publication == null) return false;
     return publication
         .rawBytes()
-        .put(publication.owner, path(entry), timestamp(time), value, start, len);
+        .put(publication.owner, publication.path, timestamp(time), value, start, len);
   }
 
   /** Publishes the SDK StructBuffer's absolute packed range without changing its state. */
@@ -257,26 +312,37 @@ public final class NetworkTablesJNI {
     if (publication == null) return false;
     return publication
         .rawBytes()
-        .put(publication.owner, path(entry), timestamp(time), value, start, len);
+        .put(publication.owner, publication.path, timestamp(time), value, start, len);
   }
 
   public static boolean setBooleanArray(int entry, long time, boolean[] value) {
     Publication publication = writable(entry, NetworkTableType.BOOLEAN_ARRAY);
     if (publication == null) return false;
     JSObject array = newArray(value.length);
-    for (int i = 0; i < value.length; i++) arrayBoolean(array, i, value[i]);
-    return putArray(publication.owner, path(entry), timestamp(time), array);
+    fillBooleans(array, value);
+    return putArray(publication.owner, publication.path, timestamp(time), array);
   }
 
   public static boolean setIntegerArray(int entry, long time, long[] value) {
     Publication publication = writable(entry, NetworkTableType.INTEGER_ARRAY);
     if (publication == null) return false;
     JSObject array = newArray(value.length);
-    for (int i = 0; i < value.length; i++) {
-      if (isSafeInteger(value[i])) arrayNumber(array, i, value[i]);
-      else arrayString(array, i, JSString.of(Long.toString(value[i])));
+    if (allSafeIntegers(value)) {
+      fillNumbers(array, value);
+    } else {
+      for (int i = 0; i < value.length; i++) {
+        if (isSafeInteger(value[i])) arrayNumber(array, i, value[i]);
+        else arrayString(array, i, JSString.of(Long.toString(value[i])));
+      }
     }
-    return putArray(publication.owner, path(entry), timestamp(time), array);
+    return putArray(publication.owner, publication.path, timestamp(time), array);
+  }
+
+  private static boolean allSafeIntegers(long[] value) {
+    for (long item : value) {
+      if (!isSafeInteger(item)) return false;
+    }
+    return true;
   }
 
   private static boolean isSafeInteger(long value) {
@@ -287,24 +353,100 @@ public final class NetworkTablesJNI {
     Publication publication = writable(entry, NetworkTableType.FLOAT_ARRAY);
     if (publication == null) return false;
     JSObject array = newArray(value.length);
-    for (int i = 0; i < value.length; i++) arrayNumber(array, i, value[i]);
-    return putArray(publication.owner, path(entry), timestamp(time), array);
+    fillNumbers(array, value);
+    return putArray(publication.owner, publication.path, timestamp(time), array);
   }
 
   public static boolean setDoubleArray(int entry, long time, double[] value) {
     Publication publication = writable(entry, NetworkTableType.DOUBLE_ARRAY);
     if (publication == null) return false;
     JSObject array = newArray(value.length);
-    for (int i = 0; i < value.length; i++) arrayNumber(array, i, value[i]);
-    return putArray(publication.owner, path(entry), timestamp(time), array);
+    fillNumbers(array, value);
+    return putArray(publication.owner, publication.path, timestamp(time), array);
   }
 
   public static boolean setStringArray(int entry, long time, String[] value) {
     Publication publication = writable(entry, NetworkTableType.STRING_ARRAY);
     if (publication == null) return false;
     JSObject array = newArray(value.length);
-    for (int i = 0; i < value.length; i++) arrayString(array, i, JSString.of(value[i]));
-    return putArray(publication.owner, path(entry), timestamp(time), array);
+    fillStrings(array, value);
+    return putArray(publication.owner, publication.path, timestamp(time), array);
+  }
+
+  /**
+   * Writes four elements per JS crossing. Element-at-a-time writes cost one boundary crossing per
+   * element, which dominates short telemetry arrays (poses, module states, trajectories).
+   */
+  private static void fillNumbers(JSObject array, double[] value) {
+    int i = 0;
+    for (int end = value.length - 3; i < end; i += 4)
+      arrayNumbers4(array, i, value[i], value[i + 1], value[i + 2], value[i + 3]);
+    switch (value.length - i) {
+      case 3 -> arrayNumbers3(array, i, value[i], value[i + 1], value[i + 2]);
+      case 2 -> arrayNumbers2(array, i, value[i], value[i + 1]);
+      case 1 -> arrayNumber(array, i, value[i]);
+      default -> {}
+    }
+  }
+
+  private static void fillNumbers(JSObject array, float[] value) {
+    int i = 0;
+    for (int end = value.length - 3; i < end; i += 4)
+      arrayNumbers4(array, i, value[i], value[i + 1], value[i + 2], value[i + 3]);
+    switch (value.length - i) {
+      case 3 -> arrayNumbers3(array, i, value[i], value[i + 1], value[i + 2]);
+      case 2 -> arrayNumbers2(array, i, value[i], value[i + 1]);
+      case 1 -> arrayNumber(array, i, value[i]);
+      default -> {}
+    }
+  }
+
+  private static void fillNumbers(JSObject array, long[] value) {
+    int i = 0;
+    for (int end = value.length - 3; i < end; i += 4)
+      arrayNumbers4(array, i, value[i], value[i + 1], value[i + 2], value[i + 3]);
+    switch (value.length - i) {
+      case 3 -> arrayNumbers3(array, i, value[i], value[i + 1], value[i + 2]);
+      case 2 -> arrayNumbers2(array, i, value[i], value[i + 1]);
+      case 1 -> arrayNumber(array, i, value[i]);
+      default -> {}
+    }
+  }
+
+  private static void fillBooleans(JSObject array, boolean[] value) {
+    int i = 0;
+    for (int end = value.length - 3; i < end; i += 4)
+      arrayBooleans4(array, i, value[i], value[i + 1], value[i + 2], value[i + 3]);
+    switch (value.length - i) {
+      case 3 -> arrayBooleans3(array, i, value[i], value[i + 1], value[i + 2]);
+      case 2 -> arrayBooleans2(array, i, value[i], value[i + 1]);
+      case 1 -> arrayBoolean(array, i, value[i]);
+      default -> {}
+    }
+  }
+
+  private static void fillStrings(JSObject array, String[] value) {
+    int i = 0;
+    for (int end = value.length - 3; i < end; i += 4)
+      arrayStrings4(
+          array,
+          i,
+          JSString.of(value[i]),
+          JSString.of(value[i + 1]),
+          JSString.of(value[i + 2]),
+          JSString.of(value[i + 3]));
+    switch (value.length - i) {
+      case 3 ->
+          arrayStrings3(
+              array,
+              i,
+              JSString.of(value[i]),
+              JSString.of(value[i + 1]),
+              JSString.of(value[i + 2]));
+      case 2 -> arrayStrings2(array, i, JSString.of(value[i]), JSString.of(value[i + 1]));
+      case 1 -> arrayString(array, i, JSString.of(value[i]));
+      default -> {}
+    }
   }
 
   public static boolean setDefaultBoolean(int entry, long time, boolean value) {
@@ -366,21 +508,26 @@ public final class NetworkTablesJNI {
   static void addSchema(String name, String type, byte[] schema) {
     JSString path = JSString.of("/.schema/" + name);
     JSObject owner = newOwner();
-    publishValue(owner, path, JSString.of(type), JSString.of("{\"retained\":true}"));
+    publishValue(owner, path, JSString.of(type), RETAINED_PROPERTIES);
     new JsBytes().putSchema(owner, path, schema);
   }
 
   public static void unpublish(int pubentry) {
-    Publication publication = publications.get(pubentry);
+    Publication publication = publication(pubentry);
     if (publication != null && publication.published) {
-      unpublishValue(publication.owner, path(pubentry));
+      unpublishValue(publication.owner, publication.path);
       publication.published = false;
     }
   }
 
   public static void release(int pubsubentry) {
     unpublish(pubsubentry);
-    publications.remove(pubsubentry);
+    Publication[] all = publications;
+    if (pubsubentry >= 0 && pubsubentry < all.length) all[pubsubentry] = null;
+  }
+
+  private static JSString properties(String json) {
+    return json == null || "{}".equals(json) ? EMPTY_PROPERTIES : JSString.of(json);
   }
 
   @JS("return {};")
@@ -411,10 +558,11 @@ public final class NetworkTablesJNI {
   private static native boolean putString(
       JSObject owner, JSString path, double timestamp, JSString value);
 
+  /** Arrays built by {@code newArray} here are handed to the transport without a second copy. */
   @JS.Coerce
   @JS(
       "return globalThis.wasmbot.nt.put(owner, path,"
-          + " timestamp === 0 ? globalThis.wasmbot.nowNanos() / 1000 : timestamp, value);")
+          + " timestamp === 0 ? globalThis.wasmbot.nowNanos() / 1000 : timestamp, value, true);")
   private static native boolean putArray(
       JSObject owner, JSString path, double timestamp, JSObject value);
 
@@ -427,20 +575,59 @@ public final class NetworkTablesJNI {
   private static native void arrayBoolean(JSObject array, int index, boolean value);
 
   @JS.Coerce
+  @JS("array[index] = a; array[index + 1] = b;")
+  private static native void arrayBooleans2(JSObject array, int index, boolean a, boolean b);
+
+  @JS.Coerce
+  @JS("array[index] = a; array[index + 1] = b; array[index + 2] = c;")
+  private static native void arrayBooleans3(
+      JSObject array, int index, boolean a, boolean b, boolean c);
+
+  @JS.Coerce
+  @JS("array[index] = a; array[index + 1] = b; array[index + 2] = c; array[index + 3] = d;")
+  private static native void arrayBooleans4(
+      JSObject array, int index, boolean a, boolean b, boolean c, boolean d);
+
+  @JS.Coerce
   @JS("array[index] = value;")
   private static native void arrayNumber(JSObject array, int index, double value);
+
+  @JS.Coerce
+  @JS("array[index] = a; array[index + 1] = b;")
+  private static native void arrayNumbers2(JSObject array, int index, double a, double b);
+
+  @JS.Coerce
+  @JS("array[index] = a; array[index + 1] = b; array[index + 2] = c;")
+  private static native void arrayNumbers3(JSObject array, int index, double a, double b, double c);
+
+  @JS.Coerce
+  @JS("array[index] = a; array[index + 1] = b; array[index + 2] = c; array[index + 3] = d;")
+  private static native void arrayNumbers4(
+      JSObject array, int index, double a, double b, double c, double d);
 
   @JS.Coerce
   @JS("array[index] = value;")
   private static native void arrayString(JSObject array, int index, JSString value);
 
-  @JS(
-      "const owner = {}; globalThis.wasmbot.nt.publish(owner, path, 'structschema', {retained: true});"
-          + " globalThis.wasmbot.nt.put(owner, path, 0, new TextEncoder().encode(value));")
+  @JS.Coerce
+  @JS("array[index] = a; array[index + 1] = b;")
+  private static native void arrayStrings2(JSObject array, int index, JSString a, JSString b);
+
+  @JS.Coerce
+  @JS("array[index] = a; array[index + 1] = b; array[index + 2] = c;")
+  private static native void arrayStrings3(
+      JSObject array, int index, JSString a, JSString b, JSString c);
+
+  @JS.Coerce
+  @JS("array[index] = a; array[index + 1] = b; array[index + 2] = c; array[index + 3] = d;")
+  private static native void arrayStrings4(
+      JSObject array, int index, JSString a, JSString b, JSString c, JSString d);
+
+  @JS("globalThis.wasmbot.nt.putSchema(path, value);")
   private static native void publishSchema(JSString path, JSString value);
 
   @JS.Coerce
-  @JS("return globalThis.wasmbot.ntGet(path) !== undefined;")
+  @JS("return globalThis.wasmbot.nt.getTopic(path)?.value !== undefined;")
   private static native boolean hasValue(JSString path);
 
   @JS.Coerce

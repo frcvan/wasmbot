@@ -40,7 +40,7 @@ public final class WasmRuntime {
   /** Samples the host once and copies only changed normalized values into Java. */
   public static void refresh() {
     if (driverStationState == null) driverStationState = createDriverStationState();
-    int changes = sampleDriverStation(driverStationState);
+    int changes = sampleDriverStation(driverStationState, refreshRequired);
     if (refreshRequired) changes = 0xff;
     if (changes == 0) return;
     JSObject ds = driverStationState;
@@ -261,7 +261,7 @@ public final class WasmRuntime {
   @JS(
       """
       return {
-        enabled: undefined, mode: 0, red: false, opMode: 0, opModeName: '',
+        enabled: undefined, mode: 0, red: false, opMode: 0, opModeName: '', revision: -1,
         controllers: Array.from({length: 6}, () => ({
           connected: false, name: '', axisCount: 0, buttonCount: 0,
           axes: [0, 0, 0, 0, 0, 0], buttons: 0
@@ -274,6 +274,10 @@ public final class WasmRuntime {
   @JS(
       """
       const ds = globalThis.wasmbot.driverStation();
+      // The simulator bumps revision only when an input or Driver Station selection changed, so an
+      // idle tick returns without touching six ports of mirrored state.
+      if (!force && typeof ds.revision === 'number' && ds.revision === state.revision) return 0;
+      state.revision = ds.revision;
       const enabled = ds.enabled === true;
       const mode = ds.mode === 'autonomous' ? 1 : ds.mode === 'teleop' ? 2 : ds.mode === 'utility' ? 3 : 0;
       const red = typeof ds.alliance === 'string' && ds.alliance.toLowerCase() === 'red';
@@ -301,16 +305,19 @@ public final class WasmRuntime {
         for (let i = 0; i < buttonCount; i++) if (buttons[i] === true) bits |= 1 << i;
         let changed = previous.connected !== connected || previous.name !== name
           || previous.axisCount !== axisCount || previous.buttonCount !== buttonCount || previous.buttons !== bits;
-        for (let axis = 0; axis < 6; axis++) {
-          let value = 0;
-          if (legacy) {
-            const raw = axis === 0 ? ds.leftX : axis === 1 ? ds.leftY : axis === 2 ? ds.rightX : 0;
-            if (typeof raw === 'number') value = raw;
-          } else if (axis < axisCount && typeof axes[axis] === 'number' && Number.isFinite(axes[axis])) {
-            value = axes[axis];
+        // Two disconnected ports carry no axis state to mirror.
+        if (connected || previous.connected) {
+          for (let axis = 0; axis < 6; axis++) {
+            let value = 0;
+            if (legacy) {
+              const raw = axis === 0 ? ds.leftX : axis === 1 ? ds.leftY : axis === 2 ? ds.rightX : 0;
+              if (typeof raw === 'number') value = raw;
+            } else if (axis < axisCount && typeof axes[axis] === 'number' && Number.isFinite(axes[axis])) {
+              value = axes[axis];
+            }
+            if (!Object.is(previous.axes[axis], value)) changed = true;
+            previous.axes[axis] = value;
           }
-          if (!Object.is(previous.axes[axis], value)) changed = true;
-          previous.axes[axis] = value;
         }
         if (changed) changes |= 1 << port;
         previous.connected = connected;
@@ -321,7 +328,7 @@ public final class WasmRuntime {
       }
       return changes;
       """)
-  private static native int sampleDriverStation(JSObject state);
+  private static native int sampleDriverStation(JSObject state, boolean force);
 
   @JS.Coerce
   @JS("return ds.enabled;")

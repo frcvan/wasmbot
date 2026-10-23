@@ -117,7 +117,7 @@ final class NetworkTablesSmoke {
   @JS.Coerce
   @JS(
       """
-      const bytes = globalThis.wasmbot.ntGet('/Review/BinaryRanges');
+      const bytes = globalThis.wasmbot.nt.getTopic('/Review/BinaryRanges')?.value;
       if (!(bytes instanceof Uint8Array) || bytes.length !== expected.length) return false;
       for (let i = 0; i < bytes.length; i++) if (bytes[i] !== expected[i]) return false;
       return true;
@@ -127,7 +127,7 @@ final class NetworkTablesSmoke {
   @JS.Coerce
   @JS(
       """
-      const bytes = globalThis.wasmbot.ntGet('/Review/BinaryRanges');
+      const bytes = globalThis.wasmbot.nt.getTopic('/Review/BinaryRanges')?.value;
       if (!(bytes instanceof Uint8Array) || bytes.length !== 131072) return false;
       for (let word = 0; word < 65536; word++) {
         if (bytes[word * 2] !== (word & 255) || bytes[word * 2 + 1] !== (word >>> 8)) return false;
